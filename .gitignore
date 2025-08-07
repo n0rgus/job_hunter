@@ -2,3 +2,4 @@ changes.json
 changes.txt
 *.pyc
 *.log
+/_input
