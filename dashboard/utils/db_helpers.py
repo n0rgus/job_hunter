@@ -1,6 +1,7 @@
 import sqlite3
+import os
 
-DB_FILE = "../job_hunt.db"
+os.path.abspath(DB_FILE = "../job_hunt.db")
 
 def get_roles():
     conn = sqlite3.connect(DB_FILE)
