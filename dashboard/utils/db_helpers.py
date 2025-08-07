@@ -1,5 +1,5 @@
-import sqlite3
 import os
+import sqlite3
 
 DB_FILE = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "job_hunt.db")
@@ -42,5 +42,69 @@ def add_keyword(keyword, role_id):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("INSERT OR IGNORE INTO Keywords (keyword, role_id, enabled) VALUES (?, ?, 1)", (keyword, role_id))
+    conn.commit()
+    conn.close()
+
+def get_keywords():
+    """Return a list of available keywords ordered alphabetically."""
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT keyword FROM Keywords ORDER BY keyword")
+    keywords = [row[0] for row in c.fetchall()]
+    conn.close()
+    return keywords
+
+def get_listings(keyword=None, suitability=None):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+
+    query = (
+        "SELECT jl.listing_id, jl.title, jl.company, jl.location, jl.url, "
+        "jl.suitability_score, jl.status "
+        "FROM Job_Listings jl JOIN Keywords k ON jl.keyword_id = k.keyword_id"
+    )
+    params = []
+    conditions = []
+
+    if keyword:
+        conditions.append("k.keyword = ?")
+        params.append(keyword)
+
+    if suitability == "not":
+        conditions.append("jl.suitability_score < 2")
+    elif suitability == "mid":
+        conditions.append("jl.suitability_score = 2")
+    elif suitability == "high":
+        conditions.append("jl.suitability_score >= 3")
+
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+
+    query += " ORDER BY jl.captured_at DESC"
+
+    c.execute(query, params)
+    rows = [
+        {
+            "listing_id": r[0],
+            "title": r[1],
+            "company": r[2],
+            "location": r[3],
+            "url": r[4],
+            "suitability_score": r[5],
+            "status": r[6],
+        }
+        for r in c.fetchall()
+    ]
+    conn.close()
+    return rows
+
+def update_listing_status(listing_id, status):
+    """Update the status of a job listing."""
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute(
+        "UPDATE Job_Listings SET status=? WHERE listing_id=?",
+        (status, listing_id),
+    )
     conn.commit()
     conn.close()

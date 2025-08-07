@@ -1,6 +1,15 @@
 from flask import Blueprint, render_template, redirect, request, url_for
-import sqlite3, json
-from utils.db_helpers import get_roles, toggle_role_enabled, add_role, toggle_keyword_enabled, add_keyword
+import json
+from utils.db_helpers import (
+    add_keyword,
+    add_role,
+    get_keywords,
+    get_listings,
+    get_roles,
+    toggle_keyword_enabled,
+    toggle_role_enabled,
+    update_listing_status,
+)
 
 main_bp = Blueprint('main', __name__)
 
@@ -17,53 +26,6 @@ def progress():
     except:
         progress = None
     return render_template("progress.html", progress=progress)
-
-@main_bp.route("/listings", methods=["GET", "POST"])
-def listings():
-    keyword = request.args.get("keyword", "")
-    suitability = request.args.get("suitability", "")
-    conn = sqlite3.connect("job_hunt.db")
-    c = conn.cursor()
-
-    query = """
-        SELECT listing_id, title, company, location, url, suitability_score, status
-        FROM Job_Listings
-        WHERE 1=1
-    """
-    params = []
-
-    if keyword:
-        query += " AND keyword_id IN (SELECT keyword_id FROM Keywords WHERE keyword = ?)"
-        params.append(keyword)
-
-    if suitability == "not":
-        query += " AND suitability_score <= 1"
-    elif suitability == "mid":
-        query += " AND suitability_score BETWEEN 2 AND 3"
-    elif suitability == "high":
-        query += " AND suitability_score >= 4"
-
-    c.execute(query, params)
-    listings = [
-        {
-            "listing_id": row[0],
-            "title": row[1],
-            "company": row[2],
-            "location": row[3],
-            "url": row[4],
-            "suitability_score": row[5],
-            "status": row[6]
-        } for row in c.fetchall()
-    ]
-
-    c.execute("SELECT DISTINCT keyword FROM Keywords ORDER BY keyword")
-    all_keywords = [r[0] for r in c.fetchall()]
-    conn.close()
-
-    return render_template("listings.html", listings=listings,
-                           keywords=all_keywords,
-                           selected_keyword=keyword,
-                           suitability=suitability)
 
 @main_bp.route("/role/toggle/<int:role_id>", methods=["POST"])
 def toggle_role(role_id):
@@ -88,3 +50,35 @@ def add_keyword_view(role_id):
     if keyword:
         add_keyword(keyword, role_id)
     return redirect(url_for("main.home"))
+
+@main_bp.route("/listings")
+def listings():
+    selected_keyword = request.args.get("keyword", "")
+    suitability = request.args.get("suitability", "")
+
+    keywords = get_keywords()
+    listings = get_listings(
+        keyword=selected_keyword or None, suitability=suitability or None
+    )
+
+    return render_template(
+        "listings.html",
+        keywords=keywords,
+        listings=listings,
+        selected_keyword=selected_keyword,
+        suitability=suitability,
+    )
+
+@main_bp.route("/update_status/<listing_id>", methods=["POST"])
+def update_status(listing_id):
+    status = request.form.get("status", "new")
+    update_listing_status(listing_id, status)
+
+    keyword = request.form.get("keyword", "")
+    suitability = request.form.get("suitability", "")
+    params = {}
+    if keyword:
+        params["keyword"] = keyword
+    if suitability:
+        params["suitability"] = suitability
+    return redirect(url_for("main.listings", **params))
