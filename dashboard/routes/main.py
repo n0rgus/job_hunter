@@ -18,6 +18,53 @@ def progress():
         progress = None
     return render_template("progress.html", progress=progress)
 
+@main_bp.route("/listings", methods=["GET", "POST"])
+def listings():
+    keyword = request.args.get("keyword", "")
+    suitability = request.args.get("suitability", "")
+    conn = sqlite3.connect("job_hunt.db")
+    c = conn.cursor()
+
+    query = """
+        SELECT listing_id, title, company, location, url, suitability_score, status
+        FROM Job_Listings
+        WHERE 1=1
+    """
+    params = []
+
+    if keyword:
+        query += " AND keyword_id IN (SELECT keyword_id FROM Keywords WHERE keyword = ?)"
+        params.append(keyword)
+
+    if suitability == "not":
+        query += " AND suitability_score <= 1"
+    elif suitability == "mid":
+        query += " AND suitability_score BETWEEN 2 AND 3"
+    elif suitability == "high":
+        query += " AND suitability_score >= 4"
+
+    c.execute(query, params)
+    listings = [
+        {
+            "listing_id": row[0],
+            "title": row[1],
+            "company": row[2],
+            "location": row[3],
+            "url": row[4],
+            "suitability_score": row[5],
+            "status": row[6]
+        } for row in c.fetchall()
+    ]
+
+    c.execute("SELECT DISTINCT keyword FROM Keywords ORDER BY keyword")
+    all_keywords = [r[0] for r in c.fetchall()]
+    conn.close()
+
+    return render_template("listings.html", listings=listings,
+                           keywords=all_keywords,
+                           selected_keyword=keyword,
+                           suitability=suitability)
+
 @main_bp.route("/role/toggle/<int:role_id>", methods=["POST"])
 def toggle_role(role_id):
     toggle_role_enabled(role_id)
