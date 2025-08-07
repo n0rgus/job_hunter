@@ -1,40 +1,38 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Job Hunt Dashboard</title>
-</head>
-<body>
-  <h1>Dashboard</h1>
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+
   <form method="post" action="/role/add">
-    <input type="text" name="role_name" placeholder="New Role Name" required>
-    <button type="submit">Add Role</button>
+	<input type="text" name="role_name" placeholder="New Role Name" required>
+	<button type="submit">Add Role</button>
   </form>
   <ul>
-    {% for role in roles %}
-    <li>
-      <form method="post" action="/role/toggle/{{ role['role_id'] }}">
-        <button type="submit">{{ 'Disable' if role['enabled'] else 'Enable' }}</button>
-        {{ role['role_name'] }} ({{ 'Enabled' if role['enabled'] else 'Disabled' }})
-      </form>
-      <ul>
-        {% for kw in role['keywords'] %}
-        <li>
-          {{ kw['keyword'] }}
-          <form method="post" action="/keyword/toggle/{{ kw['keyword_id'] }}" style="display:inline;">
-            <button type="submit">{{ 'Disable' if kw['enabled'] else 'Enable' }}</button>
-          </form>
-        </li>
-        {% endfor %}
-        <li>
-          <form method="post" action="/keyword/add/{{ role['role_id'] }}">
-            <input type="text" name="keyword" placeholder="New keyword" required>
-            <button type="submit">Add Keyword</button>
-          </form>
-        </li>
-      </ul>
-    </li>
-    {% endfor %}
+	{% for role in roles %}
+	<li>
+	  <form method="post" action="/role/toggle/{{ role['role_id'] }}">
+		<button type="submit">{{ 'Disable' if role['enabled'] else 'Enable' }}</button>
+		{{ role['role_name'] }} ({{ 'Enabled' if role['enabled'] else 'Disabled' }})
+	  </form>
+	  <ul>
+		{% for kw in role['keywords'] %}
+		<li>
+		  {{ kw['keyword'] }}
+		  <form method="post" action="/keyword/toggle/{{ kw['keyword_id'] }}" style="display:inline;">
+			<button type="submit">{{ 'Disable' if kw['enabled'] else 'Enable' }}</button>
+		  </form>
+		</li>
+		{% endfor %}
+		<li>
+		  <form method="post" action="/keyword/add/{{ role['role_id'] }}">
+			<input type="text" name="keyword" placeholder="New keyword" required>
+			<button type="submit">Add Keyword</button>
+		  </form>
+		</li>
+	  </ul>
+	</li>
+	{% endfor %}
   </ul>
-  <p><a href="/progress">View Progress</a></p>
-</body>
-</html>
+
+{% endblock %}
