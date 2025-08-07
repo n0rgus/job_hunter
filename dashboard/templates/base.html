@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{% block title %}Job Hunt{% endblock %}</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        nav { background-color: #333; padding: 10px; margin-bottom: 20px; }
+        nav a { color: white; margin-right: 15px; text-decoration: none; }
+        nav a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/">Dashboard</a>
+        <a href="/listings">Listings</a>
+        <a href="/progress">Progress</a>
+    </nav>
+    {% block content %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "phase": "PASS 1",
+  "keyword": "warehouse night shift",
+  "keyword_index": 52,
+  "total_keywords": 52,
+  "processed_count": 0,
+  "total_listings": 24,
+  "not_suitable": 0,
+  "suitable": 0,
+  "highly_suitable": 0,
+  "deep_scanned": 0,
+  "total_deep": 0,
+  "skipped_existing": 24
+}

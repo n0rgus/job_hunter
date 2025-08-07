@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head><title>Progress</title></head>
+<body>
+  <h1>Scraper Progress</h1>
+  {% if progress %}
+    <pre>{{ progress | tojson(indent=2) }}</pre>
+  {% else %}
+    <p>No progress file found.</p>
+  {% endif %}
+  <p><a href="/">← Back to Dashboard</a></p>
+</body>
+</html>

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Job Listings{% endblock %}
+
+{% block content %}
+<h1>Job Listings</h1>
+
+<form method="get" action="/listings">
+    <label>Keyword:</label>
+    <select name="keyword" onchange="this.form.submit()">
+        <option value="">All</option>
+        {% for k in keywords %}
+        <option value="{{ k }}" {% if k == selected_keyword %}selected{% endif %}>{{ k }}</option>
+        {% endfor %}
+    </select>
+
+    <label>Suitability:</label>
+    <select name="suitability" onchange="this.form.submit()">
+        <option value="">All</option>
+        <option value="not" {% if suitability == 'not' %}selected{% endif %}>Not Suitable</option>
+        <option value="mid" {% if suitability == 'mid' %}selected{% endif %}>Suitable</option>
+        <option value="high" {% if suitability == 'high' %}selected{% endif %}>Highly Suitable</option>
+    </select>
+</form>
+
+<table border="1" width="100%" style="margin-top: 20px;">
+    <tr>
+        <th>Job Title</th>
+        <th>Company</th>
+        <th>Location</th>
+        <th>Score</th>
+        <th>Status</th>
+        <th>Action</th>
+    </tr>
+    {% for row in listings %}
+    <tr class="{{ row.status }}">
+        <td><a href="{{ row.url }}" target="_blank">{{ row.title }}</a></td>
+        <td>{{ row.company }}</td>
+        <td>{{ row.location }}</td>
+        <td>{{ row.suitability_score }}</td>
+        <td>{{ row.status }}</td>
+        <td>
+            <form method="post" action="/update_status/{{ row.listing_id }}">
+                <input type="hidden" name="keyword" value="{{ selected_keyword }}">
+                <input type="hidden" name="suitability" value="{{ suitability }}">
+                <button name="status" value="applied">Apply</button>
+                <button name="status" value="ignored">Ignore</button>
+                <button name="status" value="new">Reset</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}
