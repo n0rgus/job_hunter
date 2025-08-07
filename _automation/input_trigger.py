@@ -25,7 +25,7 @@ class ChangeHandler(FileSystemEventHandler):
                 return
 
             try:
-                apply_edits(json_path, repo_dir="..\\repo")
+                apply_edits(json_path, repo_dir="..\\")
                 print(f"? Changes applied from {json_path}")
             except Exception as e:
                 print(f"? Error applying {json_path}: {e}")
