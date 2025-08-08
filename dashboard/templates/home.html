@@ -4,66 +4,69 @@
 
 {% block content %}
   <form method="post" action="/role/add" class="add-role-form">
-		<input type="text" name="role_name" placeholder="New Role Name" required>
-        <button type="submit">Add Role</button>
+    <input type="text" name="role_name" placeholder="New Role Name" required>
+    <button type="submit">Add Role</button>
   </form>
 
   <table border="1" cellspacing="0" cellpadding="4">
-        <thead>
-                <tr>
-                  <th>Role</th>
-                  <th>Keyword</th>
-                  <th>Not Suitable</th>
-                  <th>Possible</th>
-                  <th>Highly Suitable</th>
-                  <th>Total</th>
-                  <th>Actions</th>
-                </tr>
-        </thead>
-        <tbody>
-                <tr>
-                  <td><strong>Totals</strong></td>
-                  <td></td>
-                  <td>{{ totals['not'] }}</td>
-                  <td>{{ totals['possible'] }}</td>
-                  <td>{{ totals['high'] }}</td>
-                  <td>{{ totals['total'] }}</td>
-                  <td></td>
-                </tr>
-                {% for role in roles %}
-                <tr class="role-row {{ 'enabled' if role['enabled'] else 'disabled' }}" data-role="{{ role['role_id'] }}">
-                  <td colspan="2">{{ role['role_name'] }}</td>
-                  <td>{{ role['counts']['not'] }}</td>
-                  <td>{{ role['counts']['possible'] }}</td>
-                  <td>{{ role['counts']['high'] }}</td>
-                  <td>{{ role['counts']['total'] }}</td>
-                  <td>
-                        <form method="post" action="/role/toggle/{{ role['role_id'] }}" class="inline-form">
-                          <button type="submit">{{ 'Disable Role' if role['enabled'] else 'Enable Role' }}</button>
-                        </form>
-						<form method="post" action="/keyword/add/{{ role['role_id'] }}" class="inline-form">
-                          <input type="text" name="keyword" placeholder="New keyword" required>
-                          <button type="submit">Add Keyword</button>
-                        </form>
-                  </td>
-                </tr>
-                {% for kw in role['keywords'] %}
-                <tr class="keyword-row role-{{ role['role_id'] }} {{ 'enabled' if kw['enabled'] else 'disabled' }} hidden" data-keyword="{{ kw['keyword'] }}">
-                  <td></td>
-                  <td>{{ kw['keyword'] }}</td>
-                  <td>{{ kw['counts']['not'] }}</td>
-                  <td>{{ kw['counts']['possible'] }}</td>
-                  <td>{{ kw['counts']['high'] }}</td>
-                  <td>{{ kw['counts']['total'] }}</td>
-                  <td>
-                        <form method="post" action="/keyword/toggle/{{ kw['keyword_id'] }}" style="display:inline;">
-                          <button type="submit">{{ 'Disable Keyword' if kw['enabled'] else 'Enable Keyword' }}</button>
-                        </form>
-                  </td>
-                </tr>
-                {% endfor %}
-                {% endfor %}
-        </tbody>
+    <thead>
+      <tr>
+        <th></th>
+        <th>Role</th>
+        <th>Keyword</th>
+        <th class="count-col">Not Suitable</th>
+        <th class="count-col">Possible</th>
+        <th class="count-col">Highly Suitable</th>
+        <th class="count-col">Total</th>
+        <th class="actions">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="totals-row">
+        <td></td>
+        <td><strong>Totals</strong></td>
+        <td></td>
+        <td class="count-col"><a href="/listings?suitability=not">{{ totals['not'] }}</a></td>
+        <td class="count-col"><a href="/listings?suitability=mid">{{ totals['possible'] }}</a></td>
+        <td class="count-col"><a href="/listings?suitability=high">{{ totals['high'] }}</a></td>
+        <td class="count-col"><a href="/listings">{{ totals['total'] }}</a></td>
+        <td class="actions"></td>
+      </tr>
+      {% for role in roles %}
+      <tr class="role-row {{ 'enabled' if role['enabled'] else 'disabled' }}" data-role="{{ role['role_id'] }}">
+        <td>
+          <form method="post" action="/role/toggle/{{ role['role_id'] }}" class="toggle-form">
+            <input type="checkbox" class="toggle-checkbox" {% if role['enabled'] %}checked{% endif %}>
+          </form>
+        </td>
+        <td colspan="2">{{ role['role_name'] }}</td>
+        <td class="count-col"><a href="/listings?role_id={{ role['role_id'] }}&suitability=not">{{ role['counts']['not'] }}</a></td>
+        <td class="count-col"><a href="/listings?role_id={{ role['role_id'] }}&suitability=mid">{{ role['counts']['possible'] }}</a></td>
+        <td class="count-col"><a href="/listings?role_id={{ role['role_id'] }}&suitability=high">{{ role['counts']['high'] }}</a></td>
+        <td class="count-col"><a href="/listings?role_id={{ role['role_id'] }}">{{ role['counts']['total'] }}</a></td>
+        <td class="actions">
+          <button type="button" class="add-keyword-btn" data-role-id="{{ role['role_id'] }}">+</button>
+        </td>
+      </tr>
+      {% for kw in role['keywords'] %}
+      <tr class="keyword-row role-{{ role['role_id'] }} {{ 'enabled' if kw['enabled'] else 'disabled' }} hidden" data-keyword="{{ kw['keyword'] }}">
+        <td>
+          <form method="post" action="/keyword/toggle/{{ kw['keyword_id'] }}" class="toggle-form">
+            <input type="checkbox" class="toggle-checkbox" {% if kw['enabled'] %}checked{% endif %}>
+          </form>
+        </td>
+        <td></td>
+        <td>{{ kw['keyword'] }}</td>
+        <td class="count-col"><a href="/listings?keyword={{ kw['keyword'] }}&suitability=not">{{ kw['counts']['not'] }}</a></td>
+        <td class="count-col"><a href="/listings?keyword={{ kw['keyword'] }}&suitability=mid">{{ kw['counts']['possible'] }}</a></td>
+        <td class="count-col"><a href="/listings?keyword={{ kw['keyword'] }}&suitability=high">{{ kw['counts']['high'] }}</a></td>
+        <td class="count-col"><a href="/listings?keyword={{ kw['keyword'] }}">{{ kw['counts']['total'] }}</a></td>
+        <td class="actions"></td>
+      </tr>
+      {% endfor %}
+      {% endfor %}
+    </tbody>
   </table>
 
 {% endblock %}
+
