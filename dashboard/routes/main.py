@@ -55,10 +55,13 @@ def add_keyword_view(role_id):
 def listings():
     selected_keyword = request.args.get("keyword", "")
     suitability = request.args.get("suitability", "")
+    role_id = request.args.get("role_id", type=int)
 
     keywords = get_keywords()
     listings = get_listings(
-        keyword=selected_keyword or None, suitability=suitability or None
+        keyword=selected_keyword or None,
+        suitability=suitability or None,
+        role_id=role_id,
     )
 
     return render_template(
@@ -67,6 +70,7 @@ def listings():
         listings=listings,
         selected_keyword=selected_keyword,
         suitability=suitability,
+        role_id=role_id,
     )
 
 @main_bp.route("/update_status/<listing_id>", methods=["POST"])
@@ -76,9 +80,13 @@ def update_status(listing_id):
 
     keyword = request.form.get("keyword", "")
     suitability = request.form.get("suitability", "")
+    role_id = request.form.get("role_id", "")
     params = {}
     if keyword:
         params["keyword"] = keyword
     if suitability:
         params["suitability"] = suitability
+    if role_id:
+        params["role_id"] = role_id
     return redirect(url_for("main.listings", **params))
+
