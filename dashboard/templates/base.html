@@ -3,11 +3,26 @@
 <head>
     <title>{% block title %}Job Hunt{% endblock %}</title>
     <style>
-        body { font-family: Arial; margin: 20px; }
-        nav { background-color: #333; padding: 10px; margin-bottom: 20px; }
-        nav a { color: white; margin-right: 15px; text-decoration: none; }
-        nav a.active { background-color: #555; font-weight: bold; }
-        nav a:hover { text-decoration: underline; }
+        body { background-color:#2b2b2b; color:#f5f5f5; font-family:Arial; margin:20px; }
+        nav { background-color:#3a3a3a; padding:10px; margin-bottom:20px; }
+        nav a { color:#f5f5f5; margin-right:15px; text-decoration:none; padding:5px 10px; border-radius:3px; }
+        nav a.active, nav a:hover { background-color:#555; }
+        table { border-collapse:collapse; width:100%; }
+        th, td { border:1px solid #555; padding:8px; }
+        th { background-color:#444; }
+        tr.role-row, tr.keyword-row, tr.listing-row { cursor:pointer; transition:background-color 0.2s; }
+        tr.role-row.enabled, tr.keyword-row.enabled, tr.new { background-color:#3b3b3b; }
+        tr.role-row.disabled, tr.keyword-row.disabled { background-color:#1f1f1f; color:#999; }
+        tr.applied { background-color:#2f3b2f; color:#cfc; }
+        tr.ignored { background-color:#3b2f2f; color:#fcc; }
+        tr.role-row:hover, tr.keyword-row:hover, tr.listing-row:hover { background-color:#555; }
+        button { background-color:#3a3a3a; color:#f5f5f5; border:1px solid #555; padding:4px 8px; border-radius:3px; cursor:pointer; }
+        button:hover { background-color:#4a4a4a; }
+        input { background-color:#444; color:#f5f5f5; border:1px solid #555; padding:4px; }
+        .inline-form { display:inline; }
+        .add-keyword { display:flex; gap:5px; }
+        .add-keyword input { flex:1; }
+        .hidden { display:none; }
     </style>
 </head>
 <body>
@@ -17,5 +32,56 @@
         <a href="/progress">Progress</a>
     </nav>
     {% block content %}{% endblock %}
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.role-row').forEach(function (row) {
+            row.addEventListener('click', function (e) {
+                if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+                var roleId = row.dataset.role;
+                var btn = row.querySelector('.toggle-keywords');
+                document.querySelectorAll('.keyword-row.role-' + roleId).forEach(function (kwRow) {
+                    kwRow.classList.toggle('hidden');
+                });
+                if (btn) {
+                    btn.textContent = btn.textContent === '+' ? '-' : '+';
+                }
+            });
+        });
+
+        document.querySelectorAll('.toggle-keywords').forEach(function (btn) {
+            btn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                var roleId = btn.dataset.role;
+                document.querySelectorAll('.keyword-row.role-' + roleId).forEach(function (row) {
+                    row.classList.toggle('hidden');
+                });
+                btn.textContent = btn.textContent === '+' ? '-' : '+';
+            });
+        });
+
+        document.querySelectorAll('.keyword-row').forEach(function (row) {
+            row.addEventListener('click', function (e) {
+                if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+                var keyword = row.dataset.keyword;
+                window.location.href = '/listings?keyword=' + encodeURIComponent(keyword);
+            });
+        });
+
+        document.querySelectorAll('tr.listing-row').forEach(function (row) {
+            row.addEventListener('click', function (e) {
+                if (e.target.tagName === 'BUTTON' || e.target.tagName === 'A') return;
+                var url = row.dataset.url;
+                window.open(url, '_blank');
+            });
+        });
+
+        document.querySelectorAll('button').forEach(function (btn) {
+            btn.addEventListener('click', function (e) {
+                e.stopPropagation();
+            });
+        });
+    });
+    </script>
 </body>
 </html>
+
