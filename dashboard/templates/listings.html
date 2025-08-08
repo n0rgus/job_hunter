@@ -4,6 +4,9 @@
 
 {% block content %}
 <form method="get" action="/listings">
+    {% if role_id %}
+    <input type="hidden" name="role_id" value="{{ role_id }}">
+    {% endif %}
     <label>Keyword:</label>
     <select name="keyword" onchange="this.form.submit()">
         <option value="">All</option>
@@ -41,6 +44,9 @@
             <form method="post" action="/update_status/{{ row.listing_id }}">
                 <input type="hidden" name="keyword" value="{{ selected_keyword }}">
                 <input type="hidden" name="suitability" value="{{ suitability }}">
+                {% if role_id %}
+                <input type="hidden" name="role_id" value="{{ role_id }}">
+                {% endif %}
                 <button name="status" value="applied">Apply</button>
                 <button name="status" value="ignored">Ignore</button>
                 <button name="status" value="new">Reset</button>
