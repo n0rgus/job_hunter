@@ -3,7 +3,6 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<h1>Dashboard</h1>
 
 <form method="post" action="/role/add">
   <input type="text" name="role_name" placeholder="New Role Name" required>
@@ -51,7 +50,6 @@
   {% endfor %}
   </tbody>
 </table>
-<p><a href="/progress">View Progress</a></p>
 
 <style>
   table.roles { width: 100%; border-collapse: collapse; }
@@ -75,4 +73,3 @@ document.querySelectorAll('.toggle-keywords').forEach(btn => {
 });
 </script>
 {% endblock %}
-
