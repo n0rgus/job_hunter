@@ -8,7 +8,7 @@ DB_FILE = os.path.abspath(
 def get_roles():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT role_id, role_name, enabled FROM Roles ORDER BY role_name")
+    c.execute("SELECT role_id, role_name, enabled FROM Roles ORDER BY rank ASC")
     roles = []
     totals = {"not": 0, "possible": 0, "high": 0, "total": 0}
     for role_id, role_name, enabled in c.fetchall():
