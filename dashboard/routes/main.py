@@ -15,8 +15,8 @@ main_bp = Blueprint('main', __name__)
 
 @main_bp.route("/")
 def home():
-    roles = get_roles()
-    return render_template("home.html", roles=roles)
+    roles, totals = get_roles()
+    return render_template("home.html", roles=roles, totals=totals)
 
 @main_bp.route("/progress")
 def progress():
