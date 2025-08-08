@@ -38,7 +38,7 @@ class ChangeHandler(FileSystemEventHandler):
             # Wait for file to stabilize
             for _ in range(10):
                 try:
-                    with open(json_path, 'r', encoding="utf-8"):
+                    with open(json_path, 'r'):
                         break
                 except Exception:
                     time.sleep(0.5)
@@ -51,15 +51,21 @@ class ChangeHandler(FileSystemEventHandler):
                 with open(json_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
+                # If raw list, wrap in fallback structure
+                if isinstance(data, list):
+                    logging.warning("⚠️ JSON is a raw list — auto-wrapping in 'changes'.")
+                    data = { "changes": data }
+
                 commit_msg = data.get("commit_message", "Automated code update")
 
+                if "files" in data and "changes" not in data:
+                    data["changes"] = data["files"]
+
                 if "changes" in data:
-                    # Multi-file format
                     for change in data["changes"]:
-                        change["commit_message"] = commit_msg
+                        change.setdefault("commit_message", commit_msg)
                         apply_single_patch(change)
                 elif "file" in data and "edits" in data:
-                    # Single-file format
                     apply_single_patch(data)
                 else:
                     raise ValueError("JSON must contain either 'file' + 'edits' or a 'changes' list.")
