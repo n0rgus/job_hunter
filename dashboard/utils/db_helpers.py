@@ -61,6 +61,7 @@ def get_roles():
             totals[key] += role_counts[key]
     conn.close()
     return roles, totals
+
 def toggle_role_enabled(role_id):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -98,14 +99,16 @@ def get_keywords():
     conn.close()
     return keywords
 
-def get_listings(keyword=None, suitability=None):
+def get_listings(keyword=None, suitability=None, role_id=None):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
     query = (
         "SELECT jl.listing_id, jl.title, jl.company, jl.location, jl.url, "
         "jl.suitability_score, jl.status "
-        "FROM Job_Listings jl JOIN Keywords k ON jl.keyword_id = k.keyword_id"
+        "FROM Job_Listings jl "
+        "JOIN Keywords k ON jl.keyword_id = k.keyword_id "
+        "JOIN Roles r ON k.role_id = r.role_id"
     )
     params = []
     conditions = []
@@ -113,6 +116,10 @@ def get_listings(keyword=None, suitability=None):
     if keyword:
         conditions.append("k.keyword = ?")
         params.append(keyword)
+
+    if role_id:
+        conditions.append("r.role_id = ?")
+        params.append(role_id)
 
     if suitability == "not":
         conditions.append("jl.suitability_score < 2")
@@ -152,3 +159,4 @@ def update_listing_status(listing_id, status):
     )
     conn.commit()
     conn.close()
+
