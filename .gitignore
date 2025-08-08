@@ -1,5 +1,4 @@
-changes.json
-changes.txt
-*.pyc
+*.cpython-311.pyc
 *.log
 /_input
+job_hunt.db
