@@ -10,13 +10,57 @@ def get_roles():
     c = conn.cursor()
     c.execute("SELECT role_id, role_name, enabled FROM Roles ORDER BY role_name")
     roles = []
+    totals = {"not": 0, "possible": 0, "high": 0, "total": 0}
     for role_id, role_name, enabled in c.fetchall():
-        c.execute("SELECT keyword_id, keyword, enabled FROM Keywords WHERE role_id=? ORDER BY keyword", (role_id,))
-        keywords = [{"keyword_id": k[0], "keyword": k[1], "enabled": k[2]} for k in c.fetchall()]
-        roles.append({"role_id": role_id, "role_name": role_name, "enabled": enabled, "keywords": keywords})
+        c.execute(
+            "SELECT keyword_id, keyword, enabled FROM Keywords WHERE role_id=? ORDER BY keyword",
+            (role_id,),
+        )
+        keywords = []
+        role_counts = {"not": 0, "possible": 0, "high": 0, "total": 0}
+        for k_id, keyword, k_enabled in c.fetchall():
+            c.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN suitability_score = 1 THEN 1 ELSE 0 END) AS not_cnt,
+                    SUM(CASE WHEN suitability_score = 3 THEN 1 ELSE 0 END) AS possible_cnt,
+                    SUM(CASE WHEN suitability_score = 5 THEN 1 ELSE 0 END) AS high_cnt,
+                    COUNT(*) AS total_cnt
+                FROM Job_Listings
+                WHERE keyword_id = ?
+                """,
+                (k_id,),
+            )
+            not_cnt, possible_cnt, high_cnt, total_cnt = [x or 0 for x in c.fetchone()]
+            counts = {
+                "not": not_cnt,
+                "possible": possible_cnt,
+                "high": high_cnt,
+                "total": total_cnt,
+            }
+            keywords.append(
+                {
+                    "keyword_id": k_id,
+                    "keyword": keyword,
+                    "enabled": k_enabled,
+                    "counts": counts,
+                }
+            )
+            for key in role_counts:
+                role_counts[key] += counts[key]
+        roles.append(
+            {
+                "role_id": role_id,
+                "role_name": role_name,
+                "enabled": enabled,
+                "keywords": keywords,
+                "counts": role_counts,
+            }
+        )
+        for key in totals:
+            totals[key] += role_counts[key]
     conn.close()
-    return roles
-
+    return roles, totals
 def toggle_role_enabled(role_id):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
