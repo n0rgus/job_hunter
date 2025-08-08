@@ -1,17 +1,33 @@
-- Multi-user
-	Filter entire Dashboard based on choice
+UI
+ - Enable as "tick" on Left Side
+ - Add a button, get value from a po-up
+ - Fixed colum widths
+ - Role & Totals in separate colours
 
-- Role and Keyword add/remove/suspend
+Data
+ - Role - Listing Count, Duplicate Count, Last Scanned
+ - Keyword - Duplicate Count - Last Scanned
 
-- Job applications summary
+Scope
+ - Multi-user - Filter entire Dashboard based on choice
+ - Add other job search websites
 
-- Add other job search websites
+Listings.Apply
+ - ‘Method’ [On Site, On Agency Site, On Employer Site, Email]
+ - Date
 
-- When adding capture ‘Method’ [On Site, On Agency Site, On Employer Site, Email]
+Page
+ - Job applications summary
+ - Settings - Set criteria as DB objects with editable 'search' lists
 
-- Relabel suitability:-
+- Renamel suitability:-
 	1 – Not suitable
 	2 – Unlikely fit (only 
 	3 - Moderate fit (multiple criteria missing)
 	4 – Close fit (only one criteria missing)
 	5 – Ideal (all criteria match)
+
+Scrape/Scan
+ - Tags for Location & Age
+ - Add to Listing Date
+ 
