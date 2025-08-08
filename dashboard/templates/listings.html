@@ -21,7 +21,7 @@
     </select>
 </form>
 
-<table border="1" width="100%" style="margin-top: 20px;">
+<table width="100%" style="margin-top: 20px;">
     <tr>
         <th>Job Title</th>
         <th>Company</th>
@@ -31,8 +31,8 @@
         <th>Action</th>
     </tr>
     {% for row in listings %}
-    <tr class="{{ row.status }}">
-        <td><a href="{{ row.url }}" target="_blank">{{ row.title }}</a></td>
+    <tr class="listing-row {{ row.status }}" data-url="{{ row.url }}">
+        <td>{{ row.title }}</td>
         <td>{{ row.company }}</td>
         <td>{{ row.location }}</td>
         <td>{{ row.suitability_score }}</td>
@@ -50,3 +50,4 @@
     {% endfor %}
 </table>
 {% endblock %}
+
