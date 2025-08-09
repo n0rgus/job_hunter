@@ -232,4 +232,4 @@ def scrape_seek(keyword_id, keyword, keyword_index=0, total_keywords=1):
         conn.commit()
         conn.close()
 
-    return listings
+    return listings, total_listings, skipped_count
