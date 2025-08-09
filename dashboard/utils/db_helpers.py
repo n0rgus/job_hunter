@@ -9,22 +9,18 @@ DB_FILE = os.path.abspath(
 def get_roles(scanned_since=None):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    scanned_dt = datetime.fromisoformat(scanned_since) if scanned_since else None
     c.execute("SELECT role_id, role_name, enabled FROM Roles ORDER BY rank ASC")
     roles = []
-    totals = {"not": 0, "possible": 0, "high": 0, "total": 0, "returned": 0, "skipped": 0}
+    totals = {"not": 0, "possible": 0, "high": 0, "total": 0}
     for role_id, role_name, enabled in c.fetchall():
         c.execute(
-            "SELECT keyword_id, keyword, enabled, last_run FROM Keywords WHERE role_id=? ORDER BY keyword",
+            "SELECT keyword_id, keyword, enabled FROM Keywords WHERE role_id=? ORDER BY keyword",
             (role_id,),
         )
         keywords = []
-        role_counts = {"not": 0, "possible": 0, "high": 0, "total": 0, "returned": 0, "skipped": 0}
-        for k_id, keyword, k_enabled, last_run in c.fetchall():
-            last_run_dt = datetime.fromisoformat(last_run) if last_run else None
-            if scanned_dt and (last_run_dt is None or last_run_dt < scanned_dt):
-                continue
-            c.execute("""
+        role_counts = {"not": 0, "possible": 0, "high": 0, "total": 0}
+        for k_id, keyword, k_enabled in c.fetchall():
+            query = """
                 SELECT
                     SUM(CASE WHEN suitability_score = 1 THEN 1 ELSE 0 END) AS not_cnt,
                     SUM(CASE WHEN suitability_score = 3 THEN 1 ELSE 0 END) AS possible_cnt,
@@ -32,46 +28,38 @@ def get_roles(scanned_since=None):
                     COUNT(*) AS total_cnt
                 FROM Job_Listings
                 WHERE keyword_id = ?
-            """,
-            (k_id,),
-            )
+            """
+            params = [k_id]
+            if scanned_since:
+                query += " AND captured_at >= ?"
+                params.append(scanned_since)
+            c.execute(query, params)
             not_cnt, possible_cnt, high_cnt, total_cnt = [x or 0 for x in c.fetchone()]
-            c.execute("""
-                SELECT results_returned, skipped_duplicates
-                FROM Search_Run_Summary
-                WHERE keyword_id=?
-                ORDER BY run_id DESC
-                LIMIT 1
-            """,
-            (k_id,),
-            )
-            row = c.fetchone() or (0, 0)
-            returned_cnt, skipped_cnt = row
             counts = {
                 "not": not_cnt,
                 "possible": possible_cnt,
                 "high": high_cnt,
                 "total": total_cnt,
             }
-            keywords.append({
-                "keyword_id": k_id,
-                "keyword": keyword,
-                "enabled": k_enabled,
-                "counts": counts,
-                "returned": returned_cnt,
-                "skipped": skipped_cnt,
-            })
-            for key in counts:
+            keywords.append(
+                {
+                    "keyword_id": k_id,
+                    "keyword": keyword,
+                    "enabled": k_enabled,
+                    "counts": counts,
+                }
+            )
+            for key in role_counts:
                 role_counts[key] += counts[key]
-            role_counts["returned"] += returned_cnt
-            role_counts["skipped"] += skipped_cnt
-        roles.append({
-            "role_id": role_id,
-            "role_name": role_name,
-            "enabled": enabled,
-            "keywords": keywords,
-            "counts": role_counts,
-        })
+        roles.append(
+            {
+                "role_id": role_id,
+                "role_name": role_name,
+                "enabled": enabled,
+                "keywords": keywords,
+                "counts": role_counts,
+            }
+        )
         for key in totals:
             totals[key] += role_counts[key]
     conn.close()
@@ -120,9 +108,7 @@ def get_listings(keyword=None, suitability=None, role_id=None):
     query = (
         "SELECT jl.listing_id, jl.title, jl.company, jl.location, jl.url, "
         "jl.suitability_score, jl.status "
-        "FROM Job_Listings jl "
-        "JOIN Keywords k ON jl.keyword_id = k.keyword_id "
-        "JOIN Roles r ON k.role_id = r.role_id"
+        "FROM Job_Listings jl JOIN Keywords k ON jl.keyword_id = k.keyword_id"
     )
     params = []
     conditions = []
@@ -131,16 +117,16 @@ def get_listings(keyword=None, suitability=None, role_id=None):
         conditions.append("k.keyword = ?")
         params.append(keyword)
 
-    if role_id:
-        conditions.append("r.role_id = ?")
-        params.append(role_id)
-
     if suitability == "not":
         conditions.append("jl.suitability_score < 2")
     elif suitability == "mid":
         conditions.append("jl.suitability_score = 2")
     elif suitability == "high":
         conditions.append("jl.suitability_score >= 3")
+
+    if scanned_since:
+        conditions.append("jl.captured_at >= ?")
+        params.append(scanned_since)
 
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
@@ -162,7 +148,6 @@ def get_listings(keyword=None, suitability=None, role_id=None):
     ]
     conn.close()
     return rows
-
 def update_listing_status(listing_id, status):
     """Update the status of a job listing."""
     conn = sqlite3.connect(DB_FILE)
