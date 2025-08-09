@@ -1,1 +1,84 @@
-{% extends \"base.html\" %}\n\n{% block title %}Job Hunt - Dashboard{% endblock %}\n\n{% block content %}\n  <form method=\"get\" action=\"/\" class=\"filter-form\">\n    <label for=\"since\">Scanned Since:</label>\n    <input type=\"date\" id=\"since\" name=\"since\" value=\"{{ scanned_since or '' }}\">\n    <button type=\"submit\">Filter</button>\n  </form>\n  <button id=\"toggle-disabled\">Hide Disabled</button>\n  <form method=\"post\" action=\"/role/add\" class=\"add-role-form\">\n                <input type=\"text\" name=\"role_name\" placeholder=\"New Role Name\" required>\n        <button type=\"submit\">Add Role</button>\n  </form>\n\n  <table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">\n        <thead>\n                <tr>\n                  <th>Role</th>\n                  <th>Keyword</th>\n                  <th>Not Suitable</th>\n                  <th>Possible</th>\n                  <th>Highly Suitable</th>\n                  <th>Total</th>\n                  <th>Returned</th>\n                  <th>Skipped</th>\n                  <th>Actions</th>\n                </tr>\n        </thead>\n        <tbody>\n                <tr>\n                  <td><strong>Totals</strong></td>\n                  <td></td>\n                  <td>{{ totals['not'] }}</td>\n                  <td>{{ totals['possible'] }}</td>\n                  <td>{{ totals['high'] }}</td>\n                  <td>{{ totals['total'] }}</td>\n                  <td>{{ totals['returned'] }}</td>\n                  <td>{{ totals['skipped'] }}</td>\n                  <td></td>\n                </tr>\n                {% for role in roles %}\n                <tr class=\"role-row {{ 'enabled' if role['enabled'] else 'disabled' }}\" data-role=\"{{ role['role_id'] }}\">\n                  <td colspan=\"2\">{{ role['role_name'] }}</td>\n                  <td>{{ role['counts']['not'] }}</td>\n                  <td>{{ role['counts']['possible'] }}</td>\n                  <td>{{ role['counts']['high'] }}</td>\n                  <td>{{ role['counts']['total'] }}</td>\n                  <td>{{ role['counts']['returned'] }}</td>\n                  <td>{{ role['counts']['skipped'] }}</td>\n                  <td>\n                        <form method=\"post\" action=\"/role/toggle/{{ role['role_id'] }}\" class=\"inline-form\">\n                          <button type=\"submit\">{{ 'Disable Role' if role['enabled'] else 'Enable Role' }}</button>\n                        </form>\n                        <form method=\"post\" action=\"/keyword/add/{{ role['role_id'] }}\" class=\"inline-form\">\n                          <input type=\"text\" name=\"keyword\" placeholder=\"New keyword\" required>\n                          <button type=\"submit\">Add Keyword</button>\n                        </form>\n                  </td>\n                </tr>\n                {% for kw in role['keywords'] %}\n                <tr class=\"keyword-row role-{{ role['role_id'] }} {{ 'enabled' if kw['enabled'] else 'disabled' }} hidden\" data-keyword=\"{{ kw['keyword'] }}\">\n                  <td></td>\n                  <td>{{ kw['keyword'] }}</td>\n                  <td>{{ kw['counts']['not'] }}</td>\n                  <td>{{ kw['counts']['possible'] }}</td>\n                  <td>{{ kw['counts']['high'] }}</td>\n                  <td>{{ kw['counts']['total'] }}</td>\n                  <td>{{ kw['returned'] }}</td>\n                  <td>{{ kw['skipped'] }}</td>\n                  <td>\n                        <form method=\"post\" action=\"/keyword/toggle/{{ kw['keyword_id'] }}\" style=\"display:inline;\">\n                          <button type=\"submit\">{{ 'Disable Keyword' if kw['enabled'] else 'Enable Keyword' }}</button>\n                        </form>\n                  </td>\n                </tr>\n                {% endfor %}\n                {% endfor %}\n        </tbody>\n  </table>\n\n{% endblock %}\n
+{% extends \"base.html\" %}
+
+{% block title %}Job Hunt - Dashboard{% endblock %}
+
+{% block content %}
+  <form method=\"get\" action=\"/\" class=\"filter-form\">
+    <label for=\"since\">Scanned Since:</label>
+    <input type=\"date\" id=\"since\" name=\"since\" value=\"{{ scanned_since or '' }}\">
+    <button type=\"submit\">Filter</button>
+  </form>
+  <button id=\"toggle-disabled\">Hide Disabled</button>
+  <form method=\"post\" action=\"/role/add\" class=\"add-role-form\">
+                <input type=\"text\" name=\"role_name\" placeholder=\"New Role Name\" required>
+        <button type=\"submit\">Add Role</button>
+  </form>
+
+  <table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">
+        <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Keyword</th>
+                  <th>Not Suitable</th>
+                  <th>Possible</th>
+                  <th>Highly Suitable</th>
+                  <th>Total</th>
+                  <th>Returned</th>
+                  <th>Skipped</th>
+                  <th>Actions</th>
+                </tr>
+        </thead>
+        <tbody>
+                <tr>
+                  <td><strong>Totals</strong></td>
+                  <td></td>
+                  <td>{{ totals['not'] }}</td>
+                  <td>{{ totals['possible'] }}</td>
+                  <td>{{ totals['high'] }}</td>
+                  <td>{{ totals['total'] }}</td>
+                  <td>{{ totals['returned'] }}</td>
+                  <td>{{ totals['skipped'] }}</td>
+                  <td></td>
+                </tr>
+                {% for role in roles %}
+                <tr class=\"role-row {{ 'enabled' if role['enabled'] else 'disabled' }}\" data-role=\"{{ role['role_id'] }}\">
+                  <td colspan=\"2\">{{ role['role_name'] }}</td>
+                  <td>{{ role['counts']['not'] }}</td>
+                  <td>{{ role['counts']['possible'] }}</td>
+                  <td>{{ role['counts']['high'] }}</td>
+                  <td>{{ role['counts']['total'] }}</td>
+                  <td>{{ role['counts']['returned'] }}</td>
+                  <td>{{ role['counts']['skipped'] }}</td>
+                  <td>
+                        <form method=\"post\" action=\"/role/toggle/{{ role['role_id'] }}\" class=\"inline-form\">
+                          <button type=\"submit\">{{ 'Disable Role' if role['enabled'] else 'Enable Role' }}</button>
+                        </form>
+                        <form method=\"post\" action=\"/keyword/add/{{ role['role_id'] }}\" class=\"inline-form\">
+                          <input type=\"text\" name=\"keyword\" placeholder=\"New keyword\" required>
+                          <button type=\"submit\">Add Keyword</button>
+                        </form>
+                  </td>
+                </tr>
+                {% for kw in role['keywords'] %}
+                <tr class=\"keyword-row role-{{ role['role_id'] }} {{ 'enabled' if kw['enabled'] else 'disabled' }} hidden\" data-keyword=\"{{ kw['keyword'] }}\">
+                  <td></td>
+                  <td>{{ kw['keyword'] }}</td>
+                  <td>{{ kw['counts']['not'] }}</td>
+                  <td>{{ kw['counts']['possible'] }}</td>
+                  <td>{{ kw['counts']['high'] }}</td>
+                  <td>{{ kw['counts']['total'] }}</td>
+                  <td>{{ kw['returned'] }}</td>
+                  <td>{{ kw['skipped'] }}</td>
+                  <td>
+                        <form method=\"post\" action=\"/keyword/toggle/{{ kw['keyword_id'] }}\" style=\"display:inline;\">
+                          <button type=\"submit\">{{ 'Disable Keyword' if kw['enabled'] else 'Enable Keyword' }}</button>
+                        </form>
+                  </td>
+                </tr>
+                {% endfor %}
+                {% endfor %}
+        </tbody>
+  </table>
+
+{% endblock %}
+
