@@ -3,57 +3,52 @@
 {% block title %}Job Listings{% endblock %}
 
 {% block content %}
-<form method="get" action="/listings">
-    {% if role_id %}
-    <input type="hidden" name="role_id" value="{{ role_id }}">
-    {% endif %}
-    <label>Keyword:</label>
-    <select name="keyword" onchange="this.form.submit()">
-        <option value="">All</option>
-        {% for k in keywords %}
-        <option value="{{ k }}" {% if k == selected_keyword %}selected{% endif %}>{{ k }}</option>
-        {% endfor %}
-    </select>
+ <form method="get" action="/listings">
+     <input type="hidden" name="scanned_since" value="{{ scanned_since }}">
+     <label>Keyword:</label>
+     <select name="keyword" onchange="this.form.submit()">
+         <option value="">All</option>
+         {% for k in keywords %}
+         <option value="{{ k }}" {% if k == selected_keyword %}selected{% endif %}>{{ k }}</option>
+         {% endfor %}
+     </select>
 
-    <label>Suitability:</label>
-    <select name="suitability" onchange="this.form.submit()">
-        <option value="">All</option>
-        <option value="not" {% if suitability == 'not' %}selected{% endif %}>Not Suitable</option>
-        <option value="mid" {% if suitability == 'mid' %}selected{% endif %}>Suitable</option>
-        <option value="high" {% if suitability == 'high' %}selected{% endif %}>Highly Suitable</option>
-    </select>
-</form>
+     <label>Suitability:</label>
+     <select name="suitability" onchange="this.form.submit()">
+         <option value="">All</option>
+         <option value="not" {% if suitability == 'not' %}selected{% endif %}>Not Suitable</option>
+         <option value="mid" {% if suitability == 'mid' %}selected{% endif %}>Suitable</option>
+         <option value="high" {% if suitability == 'high' %}selected{% endif %}>Highly Suitable</option>
+     </select>
+ </form>
 
-<table width="100%" style="margin-top: 20px;">
-    <tr>
-        <th>Job Title</th>
-        <th>Company</th>
-        <th>Location</th>
-        <th>Score</th>
-        <th>Status</th>
-        <th>Action</th>
-    </tr>
-    {% for row in listings %}
-    <tr class="listing-row {{ row.status }}" data-url="{{ row.url }}">
-        <td>{{ row.title }}</td>
-        <td>{{ row.company }}</td>
-        <td>{{ row.location }}</td>
-        <td>{{ row.suitability_score }}</td>
-        <td>{{ row.status }}</td>
-        <td>
-            <form method="post" action="/update_status/{{ row.listing_id }}">
-                <input type="hidden" name="keyword" value="{{ selected_keyword }}">
-                <input type="hidden" name="suitability" value="{{ suitability }}">
-                {% if role_id %}
-                <input type="hidden" name="role_id" value="{{ role_id }}">
-                {% endif %}
-                <button name="status" value="applied">Apply</button>
-                <button name="status" value="ignored">Ignore</button>
-                <button name="status" value="new">Reset</button>
-            </form>
-        </td>
-    </tr>
-    {% endfor %}
-</table>
-{% endblock %}
-
+ <table width="100%" style="margin-top: 20px;">
+     <tr>
+         <th>Job Title</th>
+         <th>Company</th>
+         <th>Location</th>
+         <th>Score</th>
+         <th>Status</th>
+         <th>Action</th>
+     </tr>
+     {% for row in listings %}
+     <tr class="listing-row {{ row.status }}" data-url="{{ row.url }}">
+         <td>{{ row.title }}</td>
+         <td>{{ row.company }}</td>
+         <td>{{ row.location }}</td>
+         <td>{{ row.suitability_score }}</td>
+         <td>{{ row.status }}</td>
+         <td>
+             <form method="post" action="/update_status/{{ row.listing_id }}">
+                 <input type="hidden" name="keyword" value="{{ selected_keyword }}">
+                 <input type="hidden" name="suitability" value="{{ suitability }}">
+                 <input type="hidden" name="scanned_since" value="{{ scanned_since }}">
+                 <button name="status" value="applied">Apply</button>
+                 <button name="status" value="ignored">Ignore</button>
+                 <button name="status" value="new">Reset</button>
+             </form>
+         </td>
+     </tr>
+     {% endfor %}
+ </table>
+ {% endblock %}
