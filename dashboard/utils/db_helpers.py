@@ -1,26 +1,30 @@
 import os
+from datetime import datetime
 import sqlite3
 
 DB_FILE = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "job_hunt.db")
 )
 
-def get_roles():
+def get_roles(scanned_since=None):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    scanned_dt = datetime.fromisoformat(scanned_since) if scanned_since else None
     c.execute("SELECT role_id, role_name, enabled FROM Roles ORDER BY rank ASC")
     roles = []
-    totals = {"not": 0, "possible": 0, "high": 0, "total": 0}
+    totals = {"not": 0, "possible": 0, "high": 0, "total": 0, "returned": 0, "skipped": 0}
     for role_id, role_name, enabled in c.fetchall():
         c.execute(
-            "SELECT keyword_id, keyword, enabled FROM Keywords WHERE role_id=? ORDER BY keyword",
+            "SELECT keyword_id, keyword, enabled, last_run FROM Keywords WHERE role_id=? ORDER BY keyword",
             (role_id,),
         )
         keywords = []
-        role_counts = {"not": 0, "possible": 0, "high": 0, "total": 0}
-        for k_id, keyword, k_enabled in c.fetchall():
-            c.execute(
-                """
+        role_counts = {"not": 0, "possible": 0, "high": 0, "total": 0, "returned": 0, "skipped": 0}
+        for k_id, keyword, k_enabled, last_run in c.fetchall():
+            last_run_dt = datetime.fromisoformat(last_run) if last_run else None
+            if scanned_dt and (last_run_dt is None or last_run_dt < scanned_dt):
+                continue
+            c.execute("""
                 SELECT
                     SUM(CASE WHEN suitability_score = 1 THEN 1 ELSE 0 END) AS not_cnt,
                     SUM(CASE WHEN suitability_score = 3 THEN 1 ELSE 0 END) AS possible_cnt,
@@ -28,40 +32,50 @@ def get_roles():
                     COUNT(*) AS total_cnt
                 FROM Job_Listings
                 WHERE keyword_id = ?
-                """,
-                (k_id,),
+            """,
+            (k_id,),
             )
             not_cnt, possible_cnt, high_cnt, total_cnt = [x or 0 for x in c.fetchone()]
+            c.execute("""
+                SELECT results_returned, skipped_duplicates
+                FROM Search_Run_Summary
+                WHERE keyword_id=?
+                ORDER BY run_id DESC
+                LIMIT 1
+            """,
+            (k_id,),
+            )
+            row = c.fetchone() or (0, 0)
+            returned_cnt, skipped_cnt = row
             counts = {
                 "not": not_cnt,
                 "possible": possible_cnt,
                 "high": high_cnt,
                 "total": total_cnt,
             }
-            keywords.append(
-                {
-                    "keyword_id": k_id,
-                    "keyword": keyword,
-                    "enabled": k_enabled,
-                    "counts": counts,
-                }
-            )
-            for key in role_counts:
+            keywords.append({
+                "keyword_id": k_id,
+                "keyword": keyword,
+                "enabled": k_enabled,
+                "counts": counts,
+                "returned": returned_cnt,
+                "skipped": skipped_cnt,
+            })
+            for key in counts:
                 role_counts[key] += counts[key]
-        roles.append(
-            {
-                "role_id": role_id,
-                "role_name": role_name,
-                "enabled": enabled,
-                "keywords": keywords,
-                "counts": role_counts,
-            }
-        )
+            role_counts["returned"] += returned_cnt
+            role_counts["skipped"] += skipped_cnt
+        roles.append({
+            "role_id": role_id,
+            "role_name": role_name,
+            "enabled": enabled,
+            "keywords": keywords,
+            "counts": role_counts,
+        })
         for key in totals:
             totals[key] += role_counts[key]
     conn.close()
     return roles, totals
-
 def toggle_role_enabled(role_id):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
