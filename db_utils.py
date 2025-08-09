@@ -32,7 +32,7 @@ def insert_job_listing(**job):
     finally:
         conn.close()
 
-def insert_run_summary(keyword_id, listings_found, highly_suitable, applications_made=0):
+def insert_run_summary(keyword_id, listings_found, highly_suitable, applications_made=0, results_returned=0, skipped_duplicates=0):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute(
