@@ -12,10 +12,10 @@ def main():
     for site_name, scraper_func in SCRAPERS:
         print(f"=== Scraping {site_name} ===")
         for idx, (keyword_id, keyword) in enumerate(active_keywords):
-            listings = scraper_func(keyword_id, keyword, idx, total_keywords)
+            listings, total_returned, skipped = scraper_func(keyword_id, keyword, idx, total_keywords)
             listings_found = len(listings)
             highly_suitable = sum(1 for l in listings if l["suitability_score"] >= 3)
-            insert_run_summary(keyword_id, listings_found, highly_suitable)
+            insert_run_summary(keyword_id, listings_found, highly_suitable, results_returned=total_returned, skipped_duplicates=skipped)
 
 if __name__ == "__main__":
     main()
