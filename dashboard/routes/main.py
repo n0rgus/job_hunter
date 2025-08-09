@@ -15,9 +15,16 @@ main_bp = Blueprint('main', __name__)
 
 @main_bp.route("/")
 def home():
-    roles, totals = get_roles()
-    return render_template("home.html", roles=roles, totals=totals)
-
+    scanned_since = request.args.get("scanned_since", "")
+    hide_disabled = request.args.get("hide_disabled") == "on"
+    roles, totals = get_roles(scanned_since or None)
+    return render_template(
+        "home.html",
+        roles=roles,
+        totals=totals,
+        scanned_since=scanned_since,
+        hide_disabled=hide_disabled,
+    )
 @main_bp.route("/progress")
 def progress():
     try:
@@ -55,13 +62,13 @@ def add_keyword_view(role_id):
 def listings():
     selected_keyword = request.args.get("keyword", "")
     suitability = request.args.get("suitability", "")
-    role_id = request.args.get("role_id", type=int)
+    scanned_since = request.args.get("scanned_since", "")
 
     keywords = get_keywords()
     listings = get_listings(
         keyword=selected_keyword or None,
         suitability=suitability or None,
-        role_id=role_id,
+        scanned_since=scanned_since or None,
     )
 
     return render_template(
@@ -70,9 +77,8 @@ def listings():
         listings=listings,
         selected_keyword=selected_keyword,
         suitability=suitability,
-        role_id=role_id,
+        scanned_since=scanned_since,
     )
-
 @main_bp.route("/update_status/<listing_id>", methods=["POST"])
 def update_status(listing_id):
     status = request.form.get("status", "new")
