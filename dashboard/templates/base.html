@@ -80,6 +80,19 @@
                 if (['BUTTON','INPUT','A'].includes(e.target.tagName)) return;
                 var keyword = row.dataset.keyword;
                 window.location.href = '/listings?keyword=' + encodeURIComponent(keyword);
+        var toggleDisabled = document.getElementById('toggle-disabled');
+        if (toggleDisabled) {
+            var disabledHidden = false;
+            toggleDisabled.addEventListener('click', function () {
+                disabledHidden = !disabledHidden;
+                document.querySelectorAll('tr.disabled').forEach(function (r) {
+                    r.style.display = disabledHidden ? 'none' : '';
+                });
+                toggleDisabled.textContent = disabledHidden ? 'Show Disabled' : 'Hide Disabled';
+            });
+        }
+
+
             });
         });
 
