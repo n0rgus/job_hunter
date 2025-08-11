@@ -5,11 +5,14 @@
 **Job Hunter** is a Python-based system that automates job search aggregation and tracking for two candidates, storing results in SQLite and presenting live dashboards via a Flask Blueprint web app. Repo primary languages: Python and HTML (approx. Python 78%, HTML 22%).
 
 ### Key goals
-- Continuously scrape job listings (initially Seek AU) using curated **Keywords** grouped under **Roles**.
+- Repeatedly scrape job listings for each **Site** using curated **Keywords** grouped under **Roles**.
 - De-dupe and persist results in SQLite; skip previously seen `listing_id`s.
-- Score suitability and support deep scanning of highly suitable listings.
-- Provide an admin dashboard to manage **Roles** and **Keywords** (enable/disable, add), review metrics, and drill down into listings.
+- Capture **Criteria** values to score suitability and support deep scanning of listings above a set threshold.
+- Provide an admin dashboard to manage **Criteria**, **Roles** and **Keywords** (enable/disable, add), review metrics, and drill down into listings.
 - Track scrape session progress in `scrape_progress.json` and show live progress UI.
+- Partition the overall dataset via a **User** filter.
+- Provide a listing summary and management dashboard able to action each listing as ignored/applied/pending.
+- Provide a summary dashboard of total suitable jobs and quantity applied for by role, in a given period.
 
 ---
 
@@ -22,7 +25,7 @@
   - Respects Role/Keyword enable flags.
 - **Dashboard (Flask, Blueprint)**
   - `dashboard.py` (app entry; registers blueprint)
-  - `routes/main.py` (views: `/`, `/progress`, `/listings`, role/keyword actions)
+  - `routes/main.py` (views: `/`, `/progress`, `/listings`, `/applications`, role/keyword actions)
   - `utils/db_helpers.py` (all DB access helpers; absolute path to DB)
   - `templates/` (`base.html`, `home.html`, `progress.html`, `listings.html`)
 - **Database** (`job_hunt.db`)
@@ -30,10 +33,11 @@
 - **Progress file**: `scrape_progress.json` (for live progress page)
 
 ### Execution flow
-1. Load **active keywords** under **enabled roles**.
+1. Load **active keywords** under **enabled roles** for the current **user**
 2. Summary scrape by keyword: gather listing cards, create/update rows, count totals/skip duplicates, write progress JSON.
-3. Deep scan: visit highly suitable items, enrich fields, re-score.
-4. Dashboard reads DB + JSON to show totals, breakdowns, and progress.
+3. Assess properties of gathered listings against ceriteria sepcific to the current **user** and score suitability.
+4. Deep scan: visit highly suitable items, enrich fields, re-score.
+5. Dashboard reads DB + JSON to show totals, breakdowns, and progress.
 
 ---
 
@@ -41,9 +45,32 @@
 
 ### Tables (minimum required)
 
+- **Users**
+  - `user_id` INTEGER PK
+  - `user_name` TEXT NOT NULL
+
+- **Job Sites**
+  - `site_id` INTEGER PK
+  - `site_name` TEXT NOT NULL
+  - `url` TEXT
+  - `url_prefix` TEXT
+  - `url_suffix` TEXT
+  - `tag_for_result_count` TEXT
+  - `tag_for_cards` TEXT
+  - `tag_for_location` TEXT
+  - `tag_for_posted_on` TEXT
+
+- **Criteria**
+  - `criteria_id` INTEGER PK
+  - `criteria_name` TEXT UNIQUE NOT NULL
+  - `user_id` INTEGER REFERENCES Users(user_id) **ON DELETE CASCADE**
+  - `listing_field` TEXT
+  - `search_terms` TEXT
+
 - **Roles**
   - `role_id` INTEGER PK
   - `role_name` TEXT UNIQUE NOT NULL
+  - `user_id` INTEGER REFERENCES Users(user_id) **ON DELETE CASCADE**
   - `enabled` INTEGER DEFAULT 1
   - (*optional*) `rank` INTEGER for ordering
 
@@ -68,10 +95,12 @@
   - `suitability_score` INTEGER (1=not, 3=suitable, 5=high)
   - `status` TEXT DEFAULT `'new'` (`new|applied|ignored`)
   - `captured_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  - `site_id` INTEGER REFERENCES Sites(site_id)
 
 - **Search_Run_Summary**
   - `run_id` INTEGER PK AUTOINCREMENT
-  - `keyword_id` INTEGER
+  - `keyword_id` INTEGER REFERENCES Keywords(keyword_id)
+  - `site_id` INTEGER REFERENCES Sites(site_id)
   - `listings_found` INTEGER
   - `skipped_duplicates` INTEGER
   - `run_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -79,6 +108,8 @@
 - **Applications** (optional)
   - `listing_id` TEXT PK REFERENCES Job_Listings(listing_id)
   - `applied_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  - `method` TEXT (`listing|agency|company|email|government`)
+  - `user_id` INTEGER REFERENCES Users(user_id) **ON DELETE CASCADE**
 
 > Migration note: to enable cascade behavior for child deletes, rebuild child tables with `ON DELETE CASCADE`. Use a temporary table copy-and-rename approach with `PRAGMA foreign_keys=OFF/ON` during migration.
 
@@ -139,15 +170,17 @@ python dashboard.py
 
 ### Scraper
 - With your orchestration script (e.g., `main_scraper.py`):
-  1. Load active keywords under enabled roles:
+  1. For each **Site**
+  2. Load active keywords under enabled roles:
      ```sql
      SELECT k.keyword_id, k.keyword
      FROM Keywords k
      JOIN Roles r ON k.role_id = r.role_id
+	 JOIN Users u ON r.user_id = u.user_id
      WHERE r.enabled = 1 AND k.enabled = 1
      ORDER BY k.keyword;
      ```
-  2. For each keyword, call `scrape_seek(keyword_id, keyword, idx, total_keywords)`.
+  3. For each keyword, call `scrape_`+**site**+`(keyword_id, keyword, idx, total_keywords)`.
 - Ensure **progress JSON** writes to `scrape_progress.json` for the dashboard `/progress` view.
 
 ---
@@ -155,25 +188,30 @@ python dashboard.py
 ## 7) Dashboard Endpoints (Blueprint)
 
 - `GET /` — Home dashboard
+  - Params: `user`, `site`, `added since`, `show disabled`
   - Role management (Add, Enable/Disable)
   - Keyword per-role management (Add, Enable/Disable)
   - Totals and per-role/keyword counts
-  - “Scanned Since” filter (optional)
 - `GET /listings` — Filterable listings
-  - Params: `role`, `keyword`, `suitability` (`not|mid|high`)
-  - Actions: Apply / Ignore / Reset
+  - Params: `user`, `site`, `role`, `keyword`, `suitability` (`not|mid|high`), `action`
+  - Actions: Apply / Ignore / Pending
 - `GET /progress` — Live progress page
   - Renders `scrape_progress.json`
+- `GET /applications` - Summarised Actions
+  - Params: `user`, `site`, `added since`
+  - Totals and per-role/keyword counts
 
 ---
 
 ## 8) Scraper Requirements
 
-- **Seek List Page Parsing**
-  - Total listings: parse the element containing total counts (e.g., `data-automation="totalJobsCountBcues"`).
-  - Listing cards: iterate `article` tags; extract title, company, link, and location (use `data-automation="jobTitle"`, `jobCompany`, `job-detail-location`).
+- For each **Site** load the url prefix and suffix strings and tag values used the scrape the common information being captured
+
+- **List Page Parsing**
+  - Total listings: parse the element containing total counts (e.g., `Sites(tag_for_result_counts)`).
+  - Listing cards: iterate `Sites(tag_for_cards)` tags; extract title, company, link, and location (use `Sites(tag_for_title)`, `Sites(tag_for_company)`, `Sites(tag_for_result_location)`).
 - **De-duplication**
-  - Consider an in-memory set of already-seen IDs from DB: `SELECT listing_id FROM Job_Listings`.
+  - Consider an in-memory set of already-seen IDs from DB: `SELECT listing_id FROM Job_Listings WHERE site_id = Sites(site_id)`.
   - Skip inserting duplicates; count as `skipped_duplicates`.
 - **Experience & Suitability**
   - Classify experience from title keywords; score suitability.
@@ -184,6 +222,7 @@ python dashboard.py
   - Update after each page:
     ```json
     {
+	  "site: Seek",
       "phase": "PASS 1|PASS 2",
       "keyword": "<current>",
       "keyword_index": 3,
@@ -203,10 +242,10 @@ python dashboard.py
 
 ## 9) Operational Conventions
 
-- **Status values**: `new`, `applied`, `ignored`
+- **Status values**: `new`, `applied`, `pending`, `ignored`
 - **Suitability scale**: recommended {1=not, 3=suitable, 5=high}; keep consistent in all queries/UI.
 - **Cascade deletes**:
-  - `Roles → Keywords` and `Keywords → Job_Listings` should include `ON DELETE CASCADE`.
+  - `Users` → `Roles` and `Roles → Keywords` and `Keywords → Job_Listings` should include `ON DELETE CASCADE`.
 - **Avoid hard deletes** for keywords/roles in normal ops; prefer toggling `enabled=0` to preserve history.
 
 ---
