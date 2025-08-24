@@ -6,3 +6,7 @@ __pycache__/
 /_automation
 /_docs
 /debug_pages
+dashboard/routes/__pycache__/main.cpython-311.pyc
+dashboard/routes/__pycache__/main.cpython-311.pyc
+dashboard/utils/__pycache__/db_helpers.cpython-311.pyc
+job_hunt.db
