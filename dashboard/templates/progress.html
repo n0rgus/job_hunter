@@ -1,11 +1,78 @@
 {% extends "base.html" %}
 
-{% block title %}Job Listings{% endblock %}
+{% block title %}Scraper Progress{% endblock %}
 
 {% block content %}
-  {% if progress %}
-    <pre>{{ progress | tojson(indent=2) }}</pre>
-  {% else %}
-    <p>No progress file found.</p>
+<h1>Scraper Progress</h1>
+
+{% if progress %}
+  <div style="margin-bottom:16px;">
+    <div><b>Site:</b> {{ progress.site or 'x' }}</div>
+    <div><b>Phase:</b> {{ progress.phase or 'x' }}</div>
+    <div><b>Keyword:</b> {{ progress.keyword or 'x' }} ({{ progress.keyword_index or 0 }} / {{ progress.total_keywords or 0 }})</div>
+  </div>
+
+  <!-- Keyword Progress -->
+  <div style="margin:12px 0;">
+    <div style="margin-bottom:4px;"><b>Keyword Progress</b></div>
+    {% set kw_total = progress.total_keywords if progress.total_keywords and progress.total_keywords > 0 else 1 %}
+    {% set kw_pct = ((progress.keyword_index or 0) / kw_total * 100) | round(1) %}
+    <div style="background:#eee;border-radius:6px;height:18px;position:relative;overflow:hidden;max-width:420px;">
+      <div style="height:100%;width:{{ kw_pct }}%;background:#4CAF50;"></div>
+      <div style="position:absolute;left:8px;top:0;height:100%;display:flex;align-items:center;font-size:12px;color:#fff;">
+        {{ kw_pct }}%
+      </div>
+    </div>
+  </div>
+
+  <!-- Listings Progress -->
+  <div style="margin:12px 0;">
+    <div style="margin-bottom:4px;">
+      <b>Listings Processed</b> {{ progress.processed_count or 0 }} / {{ progress.total_listings or 0 }}
+    </div>
+    {% set list_total = progress.total_listings if progress.total_listings and progress.total_listings > 0 else 1 %}
+    {% set list_pct = ((progress.processed_count or 0) / list_total * 100) | round(1) %}
+    <div style="background:#eee;border-radius:6px;height:18px;position:relative;overflow:hidden;max-width:420px;">
+      <div style="height:100%;width:{{ list_pct }}%;background:#2196F3;"></div>
+      <div style="position:absolute;left:8px;top:0;height:100%;display:flex;align-items:center;font-size:12px;color:#fff;">
+        {{ list_pct }}%
+      </div>
+    </div>
+  </div>
+
+  <!-- Deep Scan (only for PASS 2) -->
+  {% if progress.phase == 'PASS 2' %}
+    <div style="margin:12px 0;">
+      <div style="margin-bottom:4px;">
+        <b>Deep Scan</b> {{ progress.deep_scanned or 0 }} / {{ progress.total_deep or 0 }}
+      </div>
+      {% set deep_total = progress.total_deep if progress.total_deep and progress.total_deep > 0 else 1 %}
+      {% set deep_pct = ((progress.deep_scanned or 0) / deep_total * 100) | round(1) %}
+      <div style="background:#eee;border-radius:6px;height:18px;position:relative;overflow:hidden;max-width:420px;">
+        <div style="height:100%;width:{{ deep_pct }}%;background:#9C27B0;"></div>
+        <div style="position:absolute;left:8px;top:0;height:100%;display:flex;align-items:center;font-size:12px;color:#fff;">
+          {{ deep_pct }}%
+        </div>
+      </div>
+    </div>
   {% endif %}
+
+  <!-- Counters -->
+  <div style="margin-top:16px;">
+    <div><b>Not suitable:</b> {{ progress.not_suitable or 0 }}</div>
+    <div><b>Suitable:</b> {{ progress.suitable or 0 }}</div>
+    <div><b>Highly suitable:</b> {{ progress.highly_suitable or 0 }}</div>
+    <div><b>Skipped (existing):</b> {{ progress.skipped_existing or 0 }}</div>
+  </div>
+
+  <!-- Raw JSON (collapsible) -->
+  <details style="margin-top:20px;">
+    <summary>Raw JSON</summary>
+    <pre style="background:#f7f7f7;border:1px solid #ddd;padding:10px;border-radius:6px;overflow:auto;">{{ progress | tojson(indent=2) }}</pre>
+  </details>
+
+{% else %}
+  <p>No active progress.</p>
+{% endif %}
+
 {% endblock %}

@@ -64,6 +64,7 @@ def get_roles(scanned_since=None):
             totals[key] += role_counts[key]
     conn.close()
     return roles, totals
+
 def toggle_role_enabled(role_id):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -93,22 +94,30 @@ def add_keyword(keyword, role_id):
     conn.close()
 
 def get_keywords():
-    """Return a list of available keywords ordered alphabetically."""
+    """Return a simple list of all keywords for the filter dropdown."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT keyword FROM Keywords ORDER BY keyword")
-    keywords = [row[0] for row in c.fetchall()]
+    c.execute("SELECT keyword FROM Keywords WHERE enabled = 1 ORDER BY keyword")
+    rows = c.fetchall()
     conn.close()
-    return keywords
+    return [r[0] for r in rows]
 
-def get_listings(keyword=None, suitability=None, role_id=None):
+def get_listings(keyword=None, suitability=None, role_id=None, scanned_since=None):
+    """
+    Fetch listings with optional filters:
+      - keyword: exact keyword text match (on Keywords.keyword)
+      - suitability: 'not' (<2), 'mid' (=2), 'high' (>=3)
+      - role_id: restrict to a role’s keywords
+      - scanned_since: ISO date (YYYY-MM-DD) or full timestamp; filters by captured_at
+    """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
     query = (
         "SELECT jl.listing_id, jl.title, jl.company, jl.location, jl.url, "
-        "jl.suitability_score, jl.status "
-        "FROM Job_Listings jl JOIN Keywords k ON jl.keyword_id = k.keyword_id"
+        "       jl.suitability_score, jl.status, jl.captured_at, k.keyword, k.role_id "
+        "FROM Job_Listings jl "
+        "JOIN Keywords k ON jl.keyword_id = k.keyword_id"
     )
     params = []
     conditions = []
@@ -117,37 +126,51 @@ def get_listings(keyword=None, suitability=None, role_id=None):
         conditions.append("k.keyword = ?")
         params.append(keyword)
 
+    if role_id:
+        conditions.append("k.role_id = ?")
+        params.append(role_id)
+
     if suitability == "not":
-        conditions.append("jl.suitability_score < 2")
+        conditions.append("jl.suitability_score <= 2")
     elif suitability == "mid":
-        conditions.append("jl.suitability_score = 2")
+        conditions.append("jl.suitability_score = 3")
     elif suitability == "high":
-        conditions.append("jl.suitability_score >= 3")
+        conditions.append("jl.suitability_score > 3")
 
     if scanned_since:
-        conditions.append("jl.captured_at >= ?")
+        # Accept 'YYYY-MM-DD' or a full timestamp; compare with SQLite datetime()
+        conditions.append("datetime(jl.captured_at) >= datetime(?)")
+        # If only date provided, normalize to start of day
+        if len(scanned_since) == 10:
+            scanned_since = scanned_since + " 00:00:00"
         params.append(scanned_since)
 
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
 
-    query += " ORDER BY jl.captured_at DESC"
+    query += " ORDER BY datetime(jl.captured_at) DESC, jl.listing_id DESC"
 
     c.execute(query, params)
-    rows = [
-        {
-            "listing_id": r[0],
-            "title": r[1],
-            "company": r[2],
-            "location": r[3],
-            "url": r[4],
-            "suitability_score": r[5],
-            "status": r[6],
-        }
-        for r in c.fetchall()
-    ]
+    rows = c.fetchall()
     conn.close()
-    return rows
+
+    # Map to dicts for the template
+    listings = []
+    for lid, title, company, location, url, score, status, captured_at, kw, r_id in rows:
+        listings.append({
+            "listing_id": lid,
+            "title": title,
+            "company": company,
+            "location": location,
+            "url": url,
+            "suitability_score": score,
+            "status": status,
+            "captured_at": captured_at,
+            "keyword": kw,
+            "role_id": r_id,
+        })
+    return listings
+
 def update_listing_status(listing_id, status):
     """Update the status of a job listing."""
     conn = sqlite3.connect(DB_FILE)

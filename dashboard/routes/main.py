@@ -1,3 +1,5 @@
+import os
+import sys
 from flask import Blueprint, render_template, redirect, request, url_for
 import json
 from utils.db_helpers import (
@@ -10,6 +12,15 @@ from utils.db_helpers import (
     toggle_role_enabled,
     update_listing_status,
 )
+
+# Ensure the repo root is on sys.path so config.py can be imported
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+import config  # Now safe to import
+
+PROGRESS_FILE = config.PROGRESS_FILE
 
 main_bp = Blueprint('main', __name__)
 
@@ -25,10 +36,11 @@ def home():
         scanned_since=scanned_since,
         hide_disabled=hide_disabled,
     )
+
 @main_bp.route("/progress")
 def progress():
     try:
-        with open("scrape_progress.json", "r") as f:
+        with open(PROGRESS_FILE, "r") as f:
             progress = json.load(f)
     except:
         progress = None
@@ -60,25 +72,37 @@ def add_keyword_view(role_id):
 
 @main_bp.route("/listings")
 def listings():
+    from flask import request, render_template
+    from utils.db_helpers import get_keywords, get_listings, get_roles
+
     selected_keyword = request.args.get("keyword", "")
     suitability = request.args.get("suitability", "")
     scanned_since = request.args.get("scanned_since", "")
+    role_id_str = request.args.get("role_id", "")
+    role_id = int(role_id_str) if role_id_str.isdigit() else None
 
-    keywords = get_keywords()
+    # Data for filters
+    keywords = get_keywords()  # [{'keyword_id':..,'keyword':..,'role_id':..,'enabled':..}]
+    roles = get_roles()        # [{'role_id':..,'role_name':..,'enabled':..,'keywords':[...]}, ...]
+
     listings = get_listings(
         keyword=selected_keyword or None,
         suitability=suitability or None,
+        role_id=role_id,
         scanned_since=scanned_since or None,
     )
 
     return render_template(
         "listings.html",
-        keywords=keywords,
         listings=listings,
+        keywords=keywords,
+        roles=roles,
         selected_keyword=selected_keyword,
         suitability=suitability,
         scanned_since=scanned_since,
+        role_id=role_id,
     )
+
 @main_bp.route("/update_status/<listing_id>", methods=["POST"])
 def update_status(listing_id):
     status = request.form.get("status", "new")
@@ -95,4 +119,3 @@ def update_status(listing_id):
     if role_id:
         params["role_id"] = role_id
     return redirect(url_for("main.listings", **params))
-

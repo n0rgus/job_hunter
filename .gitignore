@@ -3,3 +3,6 @@
 /_input
 job_hunt.db
 __pycache__/
+/_automation
+/_docs
+/debug_pages
