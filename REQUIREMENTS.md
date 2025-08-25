@@ -19,8 +19,14 @@
 ## 2) Architecture
 
 ### Components
+- **Inputs** (`job_hunt.db`.Tables)
+  - Users (Partition roles, criteria and results)
+  - Sites (Job search preovider + specific tags to query)
+  - Roles & Keywords (Jobs to find and likely terms to find them)
+  - Criteria & Item Lists (Listing specific information and it's effect on scoring each hit)
 - **Scrapers** (e.g., `seek_scraper_v3.py`)
   - Selenium + BeautifulSoup; two-pass (summary + deep scan).
+  - Extract + Scoring (
   - Writes to SQLite (`job_hunt.db`) and progress JSON.
   - Respects Role/Keyword enable flags.
 - **Dashboard (Flask, Blueprint)**
@@ -43,73 +49,86 @@
 
 ## 3) Data Model (SQLite)
 
-### Tables (minimum required)
+### Tables
 
 - **Users**
-  - `user_id` INTEGER PK
-  - `user_name` TEXT NOT NULL
+  - `user_id` INTEGER PK AI
+  - `user_name` TEXT NOT NULL UNIQUE
 
-- **Job Sites**
-  - `site_id` INTEGER PK
-  - `site_name` TEXT NOT NULL
+- **Sites**
+  - `site_id` INTEGER PK AI
+  - `site_name` TEXT NOT NULL UNIQUE
   - `url` TEXT
   - `url_prefix` TEXT
   - `url_suffix` TEXT
   - `tag_for_result_count` TEXT
-  - `tag_for_cards` TEXT
-  - `tag_for_location` TEXT
-  - `tag_for_posted_on` TEXT
-
-- **Criteria**
-  - `criteria_id` INTEGER PK
-  - `criteria_name` TEXT UNIQUE NOT NULL
-  - `user_id` INTEGER REFERENCES Users(user_id) **ON DELETE CASCADE**
-  - `listing_field` TEXT
-  - `search_terms` TEXT
+  - `tag_for_cards` BLOB
+  [Remaining tags migrated to Criteria, one per row]
 
 - **Roles**
-  - `role_id` INTEGER PK
-  - `role_name` TEXT UNIQUE NOT NULL
   - `user_id` INTEGER REFERENCES Users(user_id) **ON DELETE CASCADE**
-  - `enabled` INTEGER DEFAULT 1
-  - (*optional*) `rank` INTEGER for ordering
-
+  - `site_id` INTEGER REFERENCES Sites(site_id) **ON DELETE CASCADE**
+  - `role_id` INTEGER PK AI
+  - `role_name` TEXT UNIQUE NOT NULL
+  - `rank` INTEGER for ordering
+  - `enabled` BOOLEAN DEFAULT 1
+  
 - **Keywords**
-  - `keyword_id` INTEGER PK
+  - `role_id` INTEGER REFERENCES Roles(role_id) **ON DELETE CASCADE**
+  - `keyword_id` INTEGER PK AI
   - `keyword` TEXT NOT NULL
-  - `role_id` INTEGER REFERENCES Roles(role_id) **ON DELETE CASCADE** (recommended)
-  - `enabled` INTEGER DEFAULT 1
-  - `last_run` TEXT (ISO timestamp of last scrape for this keyword)
+  - `enabled` BOOLEAN DEFAULT 1
+  - `last_run` DATETIME
+  - `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+- **Criteria**
+  - `user_id` INTEGER REFERENCES Users(user_id) **ON DELETE CASCADE**
+  - `site_id` INTEGER REFERENCES Sites(site_id) **ON DELETE CASCADE**
+  - `criteria_id` INTEGER PK
+  - `criteria_field_name` TEXT UNIQUE NOT NULL
+  - `tag` TEXT
+  - `method` TEXT
+  - `use_on_card_view` BOOLEAN
+  - `maximum_score` TEXT
+  - `increase_score` TEXT
+  - `decrease_score` TEXT
+  - `maximum_score` TEXT  
+
+- **Criteria Lists**
+  - `criteria_id` INTEGER REFERENCES Criteria(criteria_id) **ON DELETE CASCADE**
+  - `item_id` INTEGER PK
+  - `list_item` TEXT
+  - `impact_on_score` TEXT [ENUM(minimum|decrease|increase|maximum)]
 
 - **Job_Listings**
-  - `listing_id` TEXT PK (seek ID)
-  - `keyword_id` INTEGER REFERENCES Keywords(keyword_id) **ON DELETE CASCADE**
-  - `title`, `company`, `location`, `url`
-  - `listing_date` TEXT
-  - `description` TEXT
-  - `pay_rate` TEXT
-  - `closing_date` TEXT
-  - `work_schedule` TEXT (optional)
-  - `experience_level` TEXT (optional)
-  - `no_license` INTEGER, `no_experience` INTEGER
-  - `suitability_score` INTEGER (1=not, 3=suitable, 5=high)
-  - `status` TEXT DEFAULT `'new'` (`new|applied|ignored`)
-  - `captured_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   - `site_id` INTEGER REFERENCES Sites(site_id)
+  - `keyword_id` INTEGER REFERENCES Keywords(keyword_id)
+  - `job_listing_id` INTEGER PK [Make AI]
+  - `listing_id` TEXT PK [Site Specific UID]
+  - `title`, `company`, `location`, `url`, `description`, `pay_rate` TEXT
+  - `work_schedule`, `experience_level` TEXT (optional)
+  - `listing_date`, `closing_date` DATE
+  - `no_license`, `no_experience` BOOLEAN
+  - `suitability_score` INTEGER [1=not, 3=suitable, 5=high]
+  - `status` TEXT DEFAULT `new` [ENUM(new|applied|ignored)]
+  - `captured_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 
 - **Search_Run_Summary**
-  - `run_id` INTEGER PK AUTOINCREMENT
+  - `site_id` INTEGER REFERENCES Sites(site_id)  
   - `keyword_id` INTEGER REFERENCES Keywords(keyword_id)
-  - `site_id` INTEGER REFERENCES Sites(site_id)
-  - `listings_found` INTEGER
-  - `skipped_duplicates` INTEGER
+  - `run_id` INTEGER PK AUTOINCREMENT
+  - `run_date` DATE DEFAULT CURRENT_DATE  
+  - `listings_found` INTEGER DEFAULT 0
+  - `skipped_duplicates` INTEGER DEFAULT 0
+  - `highly_suitable` INTEGER DEFAULT 0
   - `run_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 
 - **Applications** (optional)
-  - `listing_id` TEXT PK REFERENCES Job_Listings(listing_id)
-  - `applied_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  - `method` TEXT (`listing|agency|company|email|government`)
   - `user_id` INTEGER REFERENCES Users(user_id) **ON DELETE CASCADE**
+  - `job_listing_id` TEXT PK REFERENCES Job_Listings(job_listing_id)
+  - `applied_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  - `method` TEXT [ENUM(listing|agency|company|email|government)]
+  - `result` TEXT
 
 > Migration note: to enable cascade behavior for child deletes, rebuild child tables with `ON DELETE CASCADE`. Use a temporary table copy-and-rename approach with `PRAGMA foreign_keys=OFF/ON` during migration.
 
@@ -171,13 +190,14 @@ python dashboard.py
 ### Scraper
 - With your orchestration script (e.g., `main_scraper.py`):
   1. For each **Site**
-  2. Load active keywords under enabled roles:
+  2. Load enabled keywords under enabled roles:
      ```sql
      SELECT k.keyword_id, k.keyword
      FROM Keywords k
      JOIN Roles r ON k.role_id = r.role_id
 	 JOIN Users u ON r.user_id = u.user_id
      WHERE r.enabled = 1 AND k.enabled = 1
+	 AND r.site_id = ```+**site_id**+```
      ORDER BY k.keyword;
      ```
   3. For each keyword, call `scrape_`+**site**+`(keyword_id, keyword, idx, total_keywords)`.
@@ -205,16 +225,16 @@ python dashboard.py
 
 ## 8) Scraper Requirements
 
-- For each **Site** load the url prefix and suffix strings and tag values used the scrape the common information being captured
+- For each **Site** load the url prefix and suffix strings and tag values used to scrape the common information being captured
 
 - **List Page Parsing**
   - Total listings: parse the element containing total counts (e.g., `Sites(tag_for_result_counts)`).
-  - Listing cards: iterate `Sites(tag_for_cards)` tags; extract title, company, link, and location (use `Sites(tag_for_title)`, `Sites(tag_for_company)`, `Sites(tag_for_result_location)`).
+  - Listing cards: iterate `Sites(tag_for_cards)` tags; extract title, company, link, location and posted on (use `Criteria(tag)` where `Criteria(use_on_card_view)` is True).
 - **De-duplication**
   - Consider an in-memory set of already-seen IDs from DB: `SELECT listing_id FROM Job_Listings WHERE site_id = Sites(site_id)`.
   - Skip inserting duplicates; count as `skipped_duplicates`.
-- **Experience & Suitability**
-  - Classify experience from title keywords; score suitability.
+- **Suitability Score**
+  - Apply the score modifiers under each criteria to a base score of 3 (out of 5).
   - Deep scan only for highly suitable (score ≥ 4 or 5 depending on your scale).
 - **Captcha Handling**
   - Pause and prompt manual resolution if “confirm you are human” detected.
@@ -223,14 +243,13 @@ python dashboard.py
     ```json
     {
 	  "site: Seek",
-      "phase": "PASS 1|PASS 2",
+      "phase": "Summary Scan|Deep Scan",
       "keyword": "<current>",
       "keyword_index": 3,
       "total_keywords": 52,
       "processed_count": 220,
       "total_listings": 460,
       "not_suitable": 10,
-      "suitable": 200,
       "highly_suitable": 10,
       "skipped_existing": 40,
       "deep_scanned": 4,
@@ -243,7 +262,7 @@ python dashboard.py
 ## 9) Operational Conventions
 
 - **Status values**: `new`, `applied`, `pending`, `ignored`
-- **Suitability scale**: recommended {1=not, 3=suitable, 5=high}; keep consistent in all queries/UI.
+- **Suitability scale**: recommended {1=not, 3=neutral, 5=high}; keep consistent in all queries/UI.
 - **Cascade deletes**:
   - `Users` → `Roles` and `Roles → Keywords` and `Keywords → Job_Listings` should include `ON DELETE CASCADE`.
 - **Avoid hard deletes** for keywords/roles in normal ops; prefer toggling `enabled=0` to preserve history.
@@ -259,13 +278,29 @@ python dashboard.py
 
 ## 11) Code Editing Automation (JSON Patch Format)
 
-Follow your **ChatGPT Code Editing Instructions**:
-- Supply a single JSON object with:
-  - `file`: backslash-separated relative path (e.g., `utils\\db_helpers.py`)
-  - `edits`: array of change objects (`replace`, `insert_before`, `insert_after`, `replace_function`)
-  - `commit_message`: concise description
-- Escape quotes and represent newlines with `\n` only inside JSON; avoid escaping when writing actual files, templates, or code artifacts to disk to prevent `\\n`/`\"` artifacts.
-- For **HTML templates**, avoid embedding as escaped strings; write as real multiline files.
+- **Supply Change Request**
+
+- **DEFAULT -> Respond with Unified Diff Patch**
+  - File blocks only for changed files:
+  ```
+	<<<BEGIN FILE: path/to/module.py
+	...entire file content...
+	<<<END FILE
+  ```
+  - Anchors for surgical edits inside large files:
+  ```
+	# GPT-ANCHOR:start:function_name
+	...
+	# GPT-ANCHOR:end:function_name
+  ```
+
+- **FALLBACK -> ChatGPT Code Editing Instructions**:
+  - Supply a single JSON object with:
+    - `file`: backslash-separated relative path (e.g., `utils\\db_helpers.py`)
+    - `edits`: array of change objects (`replace`, `insert_before`, `insert_after`, `replace_function`)
+    - `commit_message`: concise description
+  - Escape quotes and represent newlines with `\n` only inside JSON; avoid escaping when writing actual files, templates, or code artifacts to disk to prevent `\\n`/`\"` artifacts.
+  - For **HTML templates**, avoid embedding as escaped strings; write as real multiline files.
 
 ---
 
@@ -285,13 +320,8 @@ Follow your **ChatGPT Code Editing Instructions**:
 
 ## 13) Future Enhancements
 
-- Pagination & search on `/listings`
-- Export CSV/Excel from dashboard
 - Additional job sources (modular scraper interface)
-- Scheduler (e.g., Windows Task Scheduler / cron)
-- Auth for dashboard actions
-- Retry/backoff on scraper failures
 
 ---
 
-*Last updated: 9 Aug 2025 (AEST).*
+*Last updated: 25 Aug 2025 (AEST).*
