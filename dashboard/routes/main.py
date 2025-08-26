@@ -1,3 +1,4 @@
+# GPT-ANCHOR:start:routes_main
 import os
 import sys
 from flask import Blueprint, render_template, redirect, request, url_for
@@ -119,3 +120,5 @@ def update_status(listing_id):
     if role_id:
         params["role_id"] = role_id
     return redirect(url_for("main.listings", **params))
+
+# GPT-ANCHOR:end:routes_main

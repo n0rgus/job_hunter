@@ -1,3 +1,4 @@
+# GPT-ANCHOR:start:tmpl_listings
 {% extends "base.html" %}
 
 {% block title %}Job Listings{% endblock %}
@@ -44,6 +45,7 @@
                  <input type="hidden" name="suitability" value="{{ suitability }}">
                  <input type="hidden" name="scanned_since" value="{{ scanned_since }}">
                  <button name="status" value="applied">Apply</button>
+                 <button name="status" value="pending">Pending</button>
                  <button name="status" value="ignored">Ignore</button>
                  <button name="status" value="new">Reset</button>
              </form>
@@ -52,3 +54,5 @@
      {% endfor %}
  </table>
  {% endblock %}
+
+# GPT-ANCHOR:end:tmpl_listings

@@ -1,3 +1,4 @@
+# GPT-ANCHOR:start:config
 # config.py
 # Central configuration for Job Hunter project
 from __future__ import annotations
@@ -119,3 +120,5 @@ if os.environ.get("JH_BLOCK_IMAGES") == "1":
     BLOCK_IMAGES = True
 if os.environ.get("JH_LOG_MATCHES") == "1":
     LOG_SCORING_MATCHES = True
+
+# GPT-ANCHOR:end:config

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Applications Summary{% endblock %}
+{% block content %}
+<h2>Applications & Actions</h2>
+
+<form method="get" action="/applications" class="inline-form">
+  <label>User:</label>
+  <input type="text" name="user" value="{{ user }}" placeholder="(optional user_id)">
+  <label>Site:</label>
+  <input type="text" name="site" value="{{ site }}" placeholder="(optional site_id)">
+  <label>Added since:</label>
+  <input type="text" name="added_since" value="{{ added_since }}" placeholder="e.g. 7d">
+  <button type="submit">Filter</button>
+</form>
+
+<table style="margin-top: 12px; width: 100%;">
+  <tr class="totals-row">
+    <th class="count-col">Applied</th>
+    <th class="count-col">Pending</th>
+    <th class="count-col">Ignored</th>
+    <th class="count-col">Total</th>
+  </tr>
+  <tr class="totals-row">
+    <td class="count-col">{{ summary.applied }}</td>
+    <td class="count-col">{{ summary.pending }}</td>
+    <td class="count-col">{{ summary.ignored }}</td>
+    <td class="count-col">{{ summary.total }}</td>
+  </tr>
+</table>
+
+<h3 style="margin-top:16px;">Recent items</h3>
+<table style="width:100%;">
+  <tr>
+    <th>Title</th>
+    <th>Company</th>
+    <th>Location</th>
+    <th>Score</th>
+    <th>Status</th>
+    <th>Captured</th>
+  </tr>
+  {% for it in items %}
+  <tr>
+    <td>{{ it.title }}</td>
+    <td>{{ it.company }}</td>
+    <td>{{ it.location }}</td>
+    <td class="count-col">{{ it.score }}</td>
+    <td>{{ it.status }}</td>
+    <td>{{ it.captured_at }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

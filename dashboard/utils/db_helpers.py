@@ -1,3 +1,4 @@
+# GPT-ANCHOR:start:db_helpers
 import os
 from datetime import datetime
 import sqlite3
@@ -182,3 +183,5 @@ def update_listing_status(listing_id, status):
     conn.commit()
     conn.close()
 
+
+# GPT-ANCHOR:end:db_helpers
