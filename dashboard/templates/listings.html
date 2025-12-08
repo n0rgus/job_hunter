@@ -20,6 +20,14 @@
          <option value="mid" {% if suitability == 'mid' %}selected{% endif %}>Suitable</option>
          <option value="high" {% if suitability == 'high' %}selected{% endif %}>Highly Suitable</option>
      </select>
+
+     <label>Color Tag:</label>
+     <select name="color_tag" onchange="this.form.submit()">
+         <option value="">All</option>
+         {% for tag in color_tags %}
+         <option value="{{ tag }}" {% if tag == color_tag %}selected{% endif %}>{{ tag }}</option>
+         {% endfor %}
+     </select>
  </form>
 
  <table width="100%" style="margin-top: 20px;">
@@ -27,6 +35,7 @@
          <th>Job Title</th>
          <th>Company</th>
          <th>Location</th>
+         <th>Color Tag</th>
          <th>Score</th>
          <th>Status</th>
          <th>Action</th>
@@ -36,6 +45,9 @@
          <td>{{ row.title }}</td>
          <td>{{ row.company }}</td>
          <td>{{ row.location }}</td>
+         <td style="background-color: {{ row.color_hex or '#444' }}; color: #000; text-align:center;">
+             {{ row.color_tag or '' }}
+         </td>
          <td>{{ row.suitability_score }}</td>
          <td>{{ row.status }}</td>
          <td>
@@ -43,6 +55,7 @@
                  <input type="hidden" name="keyword" value="{{ selected_keyword }}">
                  <input type="hidden" name="suitability" value="{{ suitability }}">
                  <input type="hidden" name="scanned_since" value="{{ scanned_since }}">
+                 <input type="hidden" name="color_tag" value="{{ color_tag }}">
                  <button name="status" value="applied">Apply</button>
                  <button name="status" value="ignored">Ignore</button>
                  <button name="status" value="new">Reset</button>
