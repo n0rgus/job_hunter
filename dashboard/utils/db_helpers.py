@@ -1,10 +1,43 @@
 import os
-from datetime import datetime
 import sqlite3
+from typing import List, Optional
 
 DB_FILE = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "job_hunt.db")
 )
+
+
+def _ensure_color_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS Color_Tags (
+            color_tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tag TEXT NOT NULL UNIQUE,
+            hex_code TEXT
+        )
+        """
+    )
+
+    cols = [row[1].lower() for row in conn.execute("PRAGMA table_info(Job_Listings)")]
+    if "color_tag_id" not in cols:
+        conn.execute(
+            "ALTER TABLE Job_Listings ADD COLUMN color_tag_id INTEGER REFERENCES Color_Tags(color_tag_id)"
+        )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_job_listings_color_tag_id ON Job_Listings(color_tag_id)"
+    )
+
+
+def _ensure_schema():
+    conn = sqlite3.connect(DB_FILE)
+    try:
+        _ensure_color_schema(conn)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+_ensure_schema()
 
 def get_roles(scanned_since=None):
     conn = sqlite3.connect(DB_FILE)
@@ -102,7 +135,51 @@ def get_keywords():
     conn.close()
     return [r[0] for r in rows]
 
-def get_listings(keyword=None, suitability=None, role_id=None, scanned_since=None):
+
+def get_color_tags(
+    keyword: Optional[str] = None,
+    role_id: Optional[int] = None,
+    scanned_since: Optional[str] = None,
+) -> List[str]:
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+
+    query = (
+        "SELECT DISTINCT ct.tag "
+        "FROM Job_Listings jl "
+        "JOIN Keywords k ON jl.keyword_id = k.keyword_id "
+        "LEFT JOIN Color_Tags ct ON jl.color_tag_id = ct.color_tag_id "
+        "WHERE ct.tag IS NOT NULL"
+    )
+    params: List[object] = []
+    conditions: List[str] = []
+
+    if keyword:
+        conditions.append("k.keyword = ?")
+        params.append(keyword)
+
+    if role_id:
+        conditions.append("k.role_id = ?")
+        params.append(role_id)
+
+    if scanned_since:
+        conditions.append("datetime(jl.captured_at) >= datetime(?)")
+        if len(scanned_since) == 10:
+            scanned_since = scanned_since + " 00:00:00"
+        params.append(scanned_since)
+
+    if conditions:
+        query += " AND " + " AND ".join(conditions)
+
+    query += " ORDER BY ct.tag"
+
+    c.execute(query, params)
+    tags = [row[0] for row in c.fetchall()]
+    conn.close()
+    return tags
+
+
+def get_listings(keyword=None, suitability=None, role_id=None, scanned_since=None, color_tag=None):
     """
     Fetch listings with optional filters:
       - keyword: exact keyword text match (on Keywords.keyword)
@@ -115,9 +192,11 @@ def get_listings(keyword=None, suitability=None, role_id=None, scanned_since=Non
 
     query = (
         "SELECT jl.listing_id, jl.title, jl.company, jl.location, jl.url, "
-        "       jl.suitability_score, jl.status, jl.captured_at, k.keyword, k.role_id "
+        "       jl.suitability_score, jl.status, jl.captured_at, k.keyword, k.role_id, "
+        "       ct.tag, ct.hex_code "
         "FROM Job_Listings jl "
-        "JOIN Keywords k ON jl.keyword_id = k.keyword_id"
+        "JOIN Keywords k ON jl.keyword_id = k.keyword_id "
+        "LEFT JOIN Color_Tags ct ON jl.color_tag_id = ct.color_tag_id"
     )
     params = []
     conditions = []
@@ -136,6 +215,10 @@ def get_listings(keyword=None, suitability=None, role_id=None, scanned_since=Non
         conditions.append("jl.suitability_score = 3")
     elif suitability == "high":
         conditions.append("jl.suitability_score > 3")
+
+    if color_tag:
+        conditions.append("ct.tag = ?")
+        params.append(color_tag)
 
     if scanned_since:
         # Accept 'YYYY-MM-DD' or a full timestamp; compare with SQLite datetime()
@@ -156,7 +239,7 @@ def get_listings(keyword=None, suitability=None, role_id=None, scanned_since=Non
 
     # Map to dicts for the template
     listings = []
-    for lid, title, company, location, url, score, status, captured_at, kw, r_id in rows:
+    for lid, title, company, location, url, score, status, captured_at, kw, r_id, ct, hex_code in rows:
         listings.append({
             "listing_id": lid,
             "title": title,
@@ -168,6 +251,8 @@ def get_listings(keyword=None, suitability=None, role_id=None, scanned_since=Non
             "captured_at": captured_at,
             "keyword": kw,
             "role_id": r_id,
+            "color_tag": ct,
+            "color_hex": hex_code,
         })
     return listings
 

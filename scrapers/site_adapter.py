@@ -109,6 +109,95 @@ def _get_table_columns(conn: sqlite3.Connection, table: str) -> List[str]:
     cur = conn.execute(f"PRAGMA table_info({table})")
     return [row[1] for row in cur.fetchall()]
 
+
+def _ensure_color_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS Color_Tags (
+            color_tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tag TEXT NOT NULL UNIQUE,
+            hex_code TEXT
+        )
+        """
+    )
+
+    cols = [row[1].lower() for row in _get_table_columns(conn, "Job_Listings")]
+    if "color_tag_id" not in cols:
+        conn.execute(
+            "ALTER TABLE Job_Listings ADD COLUMN color_tag_id INTEGER REFERENCES Color_Tags(color_tag_id)"
+        )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_job_listings_color_tag_id ON Job_Listings(color_tag_id)"
+    )
+
+
+def _split_color_label(label: Optional[str]) -> Optional[Tuple[str, Optional[str]]]:
+    if not label:
+        return None
+    parts = [p.strip() for p in str(label).split(",", 1)]
+    if not parts or not parts[0]:
+        return None
+    tag = parts[0]
+    hex_code = parts[1] if len(parts) > 1 and parts[1] else None
+    return tag, hex_code
+
+
+def _get_or_create_color_tag(conn: sqlite3.Connection, label: Optional[str]) -> Optional[int]:
+    parsed = _split_color_label(label)
+    if not parsed:
+        return None
+
+    tag, hex_code = parsed
+    _ensure_color_schema(conn)
+    cur = conn.cursor()
+    cur.execute("SELECT color_tag_id, hex_code FROM Color_Tags WHERE tag = ?", (tag,))
+    row = cur.fetchone()
+    if row:
+        color_id, existing_hex = row
+        if hex_code and not existing_hex:
+            cur.execute(
+                "UPDATE Color_Tags SET hex_code = ? WHERE color_tag_id = ?",
+                (hex_code, color_id),
+            )
+            conn.commit()
+        return color_id
+
+    cur.execute(
+        "INSERT INTO Color_Tags (tag, hex_code) VALUES (?, ?)",
+        (tag, hex_code),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def _apply_card_color_tag(
+    listing_id: Optional[str], site_id: Optional[int], label: Optional[str]
+) -> None:
+    if not listing_id or label is None:
+        return
+
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.execute("PRAGMA foreign_keys=ON")
+            color_tag_id = _get_or_create_color_tag(conn, label)
+            if color_tag_id is None:
+                return
+
+            cols = [c.lower() for c in _get_table_columns(conn, "Job_Listings")]
+            where = "listing_id = ?"
+            params: List[Any] = [listing_id]
+            if "site_id" in cols and site_id is not None:
+                where += " AND site_id = ?"
+                params.append(site_id)
+
+            conn.execute(
+                f"UPDATE Job_Listings SET color_tag_id = ? WHERE {where}",
+                [color_tag_id] + params,
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.debug(f"[COLOR TAG] failed to apply label for {listing_id}: {exc}")
+
 def _direct_upsert_listing_row(
     listing_id: str,
     keyword_id: int,
@@ -269,12 +358,27 @@ class SiteAdapter:
         logger.debug(f"[EXTRACT] title={title!r} company={company!r} location={location!r}")
         logger.debug(f"[EXTRACT] url={url!r} listing_id={listing_id!r}")
 
+        label_value = None
+        try:
+            label_value = card.get("label") or card.get("data-label")  # type: ignore[arg-type]
+        except Exception:
+            label_value = None
+        if not label_value:
+            try:
+                inner = str(card)
+                m_label = re.search(r'"label"\s*:\s*"([^"]+)"', inner)
+                if m_label:
+                    label_value = m_label.group(1)
+            except Exception:
+                label_value = None
+
         return {
             'listing_id': listing_id,
             'title': title,
             'company': company,
             'location': location,
             'url': url,
+            'label': label_value,
         }
 
 class SeekAdapter(SiteAdapter):
@@ -1010,6 +1114,7 @@ def scrape_site_summary(driver, cfg: SiteConfig, adapter: SiteAdapter,
             company = data.get('company') or ''
             location = data.get('location') or ''
             url_ = data.get('url') or ''
+            label_value = data.get('label')
 
             if not listing_id:
                 logger.debug(f"[WARN] No listing_id extracted -> SKIP | title={title!r} url={url_!r}")
@@ -1063,6 +1168,11 @@ def scrape_site_summary(driver, cfg: SiteConfig, adapter: SiteAdapter,
                     _update_listing_score(listing_id, cfg.site_id, int(prelim_score), bool(queue_deep))
                 except Exception as e3:
                     logger.debug(f"[ERROR] upsert pipeline exception: {e3}")
+
+                try:
+                    _apply_card_color_tag(listing_id, cfg.site_id, label_value)
+                except Exception as e4:
+                    logger.debug(f"[COLOR TAG] unable to persist for {listing_id}: {e4}")
 
                 # Tally buckets
                 if prelim_score < 2:
