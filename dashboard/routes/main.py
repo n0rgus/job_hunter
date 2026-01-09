@@ -4,6 +4,7 @@ from flask import Blueprint, render_template, redirect, request, url_for
 from utils.db_helpers import (
     add_keyword,
     add_role,
+    get_color_tags,
     get_keywords,
     get_listings,
     get_roles,
@@ -72,18 +73,25 @@ def listings():
     selected_keyword = request.args.get("keyword", "")
     suitability = request.args.get("suitability", "")
     scanned_since = request.args.get("scanned_since", "")
+    color_tag = request.args.get("color_tag", "")
     role_id_str = request.args.get("role_id", "")
     role_id = int(role_id_str) if role_id_str.isdigit() else None
 
     # Data for filters
     keywords = get_keywords()  # [{'keyword_id':..,'keyword':..,'role_id':..,'enabled':..}]
     roles = get_roles()        # [{'role_id':..,'role_name':..,'enabled':..,'keywords':[...]}, ...]
+    color_tags = get_color_tags(
+        keyword=selected_keyword or None,
+        role_id=role_id,
+        scanned_since=scanned_since or None,
+    )
 
     listings = get_listings(
         keyword=selected_keyword or None,
         suitability=suitability or None,
         role_id=role_id,
         scanned_since=scanned_since or None,
+        color_tag=color_tag or None,
     )
 
     return render_template(
@@ -95,6 +103,8 @@ def listings():
         suitability=suitability,
         scanned_since=scanned_since,
         role_id=role_id,
+        color_tags=color_tags,
+        color_tag=color_tag,
     )
 
 @main_bp.route("/update_status/<listing_id>", methods=["POST"])
@@ -105,6 +115,7 @@ def update_status(listing_id):
     keyword = request.form.get("keyword", "")
     suitability = request.form.get("suitability", "")
     role_id = request.form.get("role_id", "")
+    color_tag = request.form.get("color_tag", "")
     params = {}
     if keyword:
         params["keyword"] = keyword
@@ -112,6 +123,8 @@ def update_status(listing_id):
         params["suitability"] = suitability
     if role_id:
         params["role_id"] = role_id
+    if color_tag:
+        params["color_tag"] = color_tag
     return redirect(url_for("main.listings", **params))
 
 # GPT-ANCHOR:end:routes_main
