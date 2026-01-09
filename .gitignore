@@ -49,3 +49,19 @@ scrape_progress.json
 _archive/
 _wip/
 scrapers/debug_pages/
+
+# --- Python bytecode / caches ---
+__pycache__/
+**/__pycache__/
+*.pyc
+*.cpython-*.pyc
+
+# --- Local DB / state ---
+job_hunt.db
+scrape_progress.json
+
+# --- Dev history & debug captures (archive, don't version) ---
+_archive/
+_wip/
+scrapers/debug_pages/
+
