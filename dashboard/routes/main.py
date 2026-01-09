@@ -1,8 +1,6 @@
 # GPT-ANCHOR:start:routes_main
-import os
-import sys
+import os, sys, json, config
 from flask import Blueprint, render_template, redirect, request, url_for
-import json
 from utils.db_helpers import (
     add_keyword,
     add_role,
@@ -18,8 +16,6 @@ from utils.db_helpers import (
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
-
-import config  # Now safe to import
 
 PROGRESS_FILE = config.PROGRESS_FILE
 
@@ -73,9 +69,6 @@ def add_keyword_view(role_id):
 
 @main_bp.route("/listings")
 def listings():
-    from flask import request, render_template
-    from utils.db_helpers import get_keywords, get_listings, get_roles
-
     selected_keyword = request.args.get("keyword", "")
     suitability = request.args.get("suitability", "")
     scanned_since = request.args.get("scanned_since", "")

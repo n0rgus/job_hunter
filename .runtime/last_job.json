@@ -1,0 +1,11 @@
+{
+  "started": true,
+  "pid": 18676,
+  "cmd": [
+    "C:\\Users\\Norgus\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+    "-u",
+    "D:\\Data\\Code\\Repos\\job_hunter-dev\\main_scraper.py"
+  ],
+  "started_at": "2025-09-21T05:32:57.723895Z",
+  "log_file": "D:\\Data\\Code\\Repos\\job_hunter-dev\\logs\\job_hunter.log"
+}

@@ -3,6 +3,7 @@
 {% block title %}Job Hunt - Dashboard{% endblock %}
 
 {% block content %}
+
   <form method="get" action="/" class="filter-form">
     <label for="scanned_since">Scanned Since:</label>
     <input type="date" id="scanned_since" name="scanned_since" value="{{ scanned_since }}" onchange="this.form.submit()">

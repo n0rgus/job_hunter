@@ -1,4 +1,4 @@
-# GPT-ANCHOR:start:tmpl_progress
+<!-- # GPT-ANCHOR:start:tmpl_progress -->
 {% extends "base.html" %}
 
 {% block title %}Scraper Progress{% endblock %}
@@ -6,76 +6,224 @@
 {% block content %}
 <h1>Scraper Progress</h1>
 
-{% if progress %}
-  <div style="margin-bottom:16px;">
-    <div><b>Site:</b> {{ progress.site or 'x' }}</div>
-    <div><b>Phase:</b> {{ progress.phase or 'x' }}</div>
-    <div><b>Keyword:</b> {{ progress.keyword or 'x' }} ({{ progress.keyword_index or 0 }} / {{ progress.total_keywords or 0 }})</div>
-  </div>
+  <style>
+    :root { --gap: 1rem; --max: 1100px; }
 
-  <!-- Keyword Progress -->
-  <div style="margin:12px 0;">
-    <div style="margin-bottom:4px;"><b>Keyword Progress</b></div>
-    {% set kw_total = progress.total_keywords if progress.total_keywords and progress.total_keywords > 0 else 1 %}
-    {% set kw_pct = ((progress.keyword_index or 0) / kw_total * 100) | round(1) %}
-    <div style="background:#eee;border-radius:6px;height:18px;position:relative;overflow:hidden;max-width:420px;">
-      <div style="height:100%;width:{{ kw_pct }}%;background:#4CAF50;"></div>
-      <div style="position:absolute;left:8px;top:0;height:100%;display:flex;align-items:center;font-size:12px;color:#fff;">
-        {{ kw_pct }}%
+    /* Full-width container; content hugs the left */
+    .wrap {
+      width: 100%;
+      padding: var(--gap);
+    }
+
+	/* Layout stays left-aligned; spare space remains on the far right */
+	.layout {
+	  display: flex;
+	  align-items: flex-start;
+	  justify-content: flex-start;
+	  gap: var(--gap);
+	}
+
+	/* Left column: don't hog the row — cap its width and allow shrinking */
+	.left  { flex: 0 1 500px; }   /* pick a cap that suits (e.g. 640–760px) */
+	.right { flex: 0 0 600px; }   /* fixed-width sidebar */
+
+	/* Both columns: black background to match site */
+	.col {
+	  background: #000;
+	  color: #fff;
+	  border: 1px solid #222;
+	  border-radius: 10px;
+	  padding: var(--gap);
+	}
+
+	/* If your right column uses a .card inside, make it dark too */
+	.card { background: #000; color: #fff; border: 1px solid #222; }
+
+	/* Keep progress bars visible on black (optional helper if you add classes) */
+	/* .meter { background:#222; } .meter > span { background:#4CAF50; } */
+
+	/* Mobile: stack and let both go full width */
+	@media (max-width: 768px) {
+	  .layout { flex-direction: column; }
+	  .left, .right { flex: 1 1 auto; }
+	}
+
+  </style>
+
+  <div class="wrap">
+    <div class="layout" role="region" aria-label="Two-column content">
+      <div class="col left">
+		{% if progress %}
+
+		  <div style="margin-bottom:16px;">
+			<div><b>Site:</b> {{ progress.site or 'x' }}</div>
+			<div><b>Phase:</b> {{ progress.phase or 'x' }}</div>
+			<div><b>Keyword:</b> {{ progress.keyword or 'x' }} ({{ progress.keyword_index or 0 }} / {{ progress.total_keywords or 0 }})</div>
+		  </div>
+
+		  <!-- Keyword Progress -->
+		  <div style="margin:12px 0;">
+			<div style="margin-bottom:4px;"><b>Keyword Progress</b></div>
+			{% set kw_total = progress.total_keywords if progress.total_keywords and progress.total_keywords > 0 else 1 %}
+			{% set kw_pct = ((progress.keyword_index or 0) / kw_total * 100) | round(1) %}
+			<div style="background:#eee;border-radius:6px;height:18px;position:relative;overflow:hidden;max-width:420px;">
+			  <div style="height:100%;width:{{ kw_pct }}%;background:#4CAF50;"></div>
+			  <div style="position:absolute;left:8px;top:0;height:100%;display:flex;align-items:center;font-size:12px;color:#fff;">
+				{{ kw_pct }}%
+			  </div>
+			</div>
+		  </div>
+
+		  <!-- Listings Progress -->
+		  <div style="margin:12px 0;">
+			<div style="margin-bottom:4px;">
+			  <b>Listings Processed</b> {{ progress.processed_count or 0 }} / {{ progress.total_listings or 0 }}
+			</div>
+			{% set list_total = progress.total_listings if progress.total_listings and progress.total_listings > 0 else 1 %}
+			{% set list_pct = ((progress.processed_count or 0) / list_total * 100) | round(1) %}
+			<div style="background:#eee;border-radius:6px;height:18px;position:relative;overflow:hidden;max-width:420px;">
+			  <div style="height:100%;width:{{ list_pct }}%;background:#2196F3;"></div>
+			  <div style="position:absolute;left:8px;top:0;height:100%;display:flex;align-items:center;font-size:12px;color:#fff;">
+				{{ list_pct }}%
+			  </div>
+			</div>
+		  </div>
+
+		  <!-- Deep Scan (only for PASS 2) -->
+		  {% if progress.phase == 'PASS 2' %}
+			<div style="margin:12px 0;">
+			  <div style="margin-bottom:4px;">
+				<b>Deep Scan</b> {{ progress.deep_scanned or 0 }} / {{ progress.total_deep or 0 }}
+			  </div>
+			  {% set deep_total = progress.total_deep if progress.total_deep and progress.total_deep > 0 else 1 %}
+			  {% set deep_pct = ((progress.deep_scanned or 0) / deep_total * 100) | round(1) %}
+			  <div style="background:#eee;border-radius:6px;height:18px;position:relative;overflow:hidden;max-width:420px;">
+				<div style="height:100%;width:{{ deep_pct }}%;background:#9C27B0;"></div>
+				<div style="position:absolute;left:8px;top:0;height:100%;display:flex;align-items:center;font-size:12px;color:#fff;">
+				  {{ deep_pct }}%
+				</div>
+			  </div>
+			</div>
+		  {% endif %}
+
+		  <!-- Counters -->
+		  <div style="margin-top:16px;">
+			<div><b>Not suitable:</b> {{ progress.not_suitable or 0 }}</div>
+			<div><b>Suitable:</b> {{ progress.suitable or 0 }}</div>
+			<div><b>Highly suitable:</b> {{ progress.highly_suitable or 0 }}</div>
+			<div><b>Skipped (existing):</b> {{ progress.skipped_existing or 0 }}</div>
+		  </div>
+
+		  <!-- Raw JSON (collapsible) -->
+		  <details style="margin-top:20px;">
+			<summary>Raw JSON</summary>
+			<pre style="background:#f7f7f7;border:1px solid #ddd;padding:10px;border-radius:6px;overflow:auto;">{{ progress | tojson(indent=2) }}</pre>
+		  </details>
+
+		{% else %}
+		  <p>No active progress.</p>
+		{% endif %}
       </div>
+      <div class="col right">
+		<style>
+			/* Card stays dark */
+			.card{border:0;padding:4px;background:#222;max-width:1000px}
+
+			/* Button improvements + spinner on .btn-loading */
+			#startBtn{
+			  padding:6px 10px;
+			  border-radius:6px;
+			  border:1px solid #1f4fd8;
+			  background:#2563eb;
+			  color:#fff;                 /* was #222; make text readable on blue */
+			  cursor:pointer;
+			  font-weight:600;
+			}
+			#startBtn.btn-disabled{ opacity:.6; cursor:not-allowed }
+			#startBtn.btn-loading::after{
+			  content:"";
+			  display:inline-block;
+			  width:1em; height:1em;
+			  margin-left:.5em;
+			  border:2px solid currentColor;
+			  border-right-color: transparent;
+			  border-radius:50%;
+			  animation: spin .6s linear infinite;
+			  vertical-align:-0.2em;
+			}
+			@keyframes spin{ to { transform: rotate(360deg) } }
+
+			.log{height:300px;background:#000;color:#a7f3d0;padding:4px;overflow:auto;border-radius:2px;margin-top:4px}
+			.log { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+			.error{margin-top:8px;color:#dc2626;font-size:0.95rem}
+		</style>		
+		<div class="card" id="scraper-card">
+			  <div style="display:flex; gap:8px; align-items:center;">
+				<select id="siteId">
+				  <option value="">All sites</option>
+				  <option value="1">Seek.com.au</option>
+				</select>
+				<button id="startBtn" type="button">Start Scraper</button>
+				<button id="stopBtn" type="button" disabled>Stop</button>
+			  </div>
+			  <div id="error" class="error" hidden></div>
+			  <pre id="log" class="log" aria-live="polite"></pre>
+		</div>
+		<script>
+		(function(){
+		  const startBtn = document.getElementById('startBtn');
+		  const stopBtn  = document.getElementById('stopBtn');
+		  const siteSel  = document.getElementById('siteId');
+		  const logEl    = document.getElementById('log');
+		  const errorEl  = document.getElementById('error');
+
+		  function setRunning(running){
+			startBtn.disabled = running;
+			stopBtn.disabled  = !running;
+			startBtn.textContent = running ? 'Running…' : 'Start Scraper';
+			startBtn.classList.toggle('btn-disabled', running);
+		  }
+
+		  async function refreshStatus(){
+			try{ const r = await fetch('/api/scrape/status'); const j = await r.json(); setRunning(!!j.running); }catch(e){}
+		  }
+
+		  function attachLogStream(){
+			const es = new EventSource('/api/scrape/log/stream');
+			es.onmessage = (ev) => { logEl.textContent += ev.data + '\n'; logEl.scrollTop = logEl.scrollHeight; };
+		  }
+
+		  startBtn.addEventListener('click', async () => {
+			errorEl.hidden = true;
+			try{
+			  const body = {};
+			  if(siteSel.value) body.site_id = siteSel.value;
+			  const r = await fetch('/api/scrape/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+			  if(r.status === 409){ setRunning(true); return; }
+			  if(!r.ok){ throw new Error(await r.text()); }
+			  setRunning(true);
+			}catch(err){ errorEl.textContent = err?.message || String(err); errorEl.hidden = false; }
+		  });
+
+		  stopBtn.addEventListener('click', async () => {
+			errorEl.hidden = true;
+			try{
+			  const r = await fetch('/api/scrape/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+			  const j = await r.json();
+			  if(!r.ok || !j.stopped){ throw new Error(j.reason || 'Failed to stop'); }
+			  setRunning(false);
+			}catch(err){ errorEl.textContent = err?.message || String(err); errorEl.hidden = false; }
+		  });
+
+		  setRunning(true);
+		  refreshStatus();
+		  attachLogStream();
+		})();
+		</script>
+	  </div>
     </div>
   </div>
-
-  <!-- Listings Progress -->
-  <div style="margin:12px 0;">
-    <div style="margin-bottom:4px;">
-      <b>Listings Processed</b> {{ progress.processed_count or 0 }} / {{ progress.total_listings or 0 }}
-    </div>
-    {% set list_total = progress.total_listings if progress.total_listings and progress.total_listings > 0 else 1 %}
-    {% set list_pct = ((progress.processed_count or 0) / list_total * 100) | round(1) %}
-    <div style="background:#eee;border-radius:6px;height:18px;position:relative;overflow:hidden;max-width:420px;">
-      <div style="height:100%;width:{{ list_pct }}%;background:#2196F3;"></div>
-      <div style="position:absolute;left:8px;top:0;height:100%;display:flex;align-items:center;font-size:12px;color:#fff;">
-        {{ list_pct }}%
-      </div>
-    </div>
-  </div>
-
-  <!-- Deep Scan (only for PASS 2) -->
-  {% if progress.phase == 'PASS 2' %}
-    <div style="margin:12px 0;">
-      <div style="margin-bottom:4px;">
-        <b>Deep Scan</b> {{ progress.deep_scanned or 0 }} / {{ progress.total_deep or 0 }}
-      </div>
-      {% set deep_total = progress.total_deep if progress.total_deep and progress.total_deep > 0 else 1 %}
-      {% set deep_pct = ((progress.deep_scanned or 0) / deep_total * 100) | round(1) %}
-      <div style="background:#eee;border-radius:6px;height:18px;position:relative;overflow:hidden;max-width:420px;">
-        <div style="height:100%;width:{{ deep_pct }}%;background:#9C27B0;"></div>
-        <div style="position:absolute;left:8px;top:0;height:100%;display:flex;align-items:center;font-size:12px;color:#fff;">
-          {{ deep_pct }}%
-        </div>
-      </div>
-    </div>
-  {% endif %}
-
-  <!-- Counters -->
-  <div style="margin-top:16px;">
-    <div><b>Not suitable:</b> {{ progress.not_suitable or 0 }}</div>
-    <div><b>Suitable:</b> {{ progress.suitable or 0 }}</div>
-    <div><b>Highly suitable:</b> {{ progress.highly_suitable or 0 }}</div>
-    <div><b>Skipped (existing):</b> {{ progress.skipped_existing or 0 }}</div>
-  </div>
-
-  <!-- Raw JSON (collapsible) -->
-  <details style="margin-top:20px;">
-    <summary>Raw JSON</summary>
-    <pre style="background:#f7f7f7;border:1px solid #ddd;padding:10px;border-radius:6px;overflow:auto;">{{ progress | tojson(indent=2) }}</pre>
-  </details>
-
-{% else %}
-  <p>No active progress.</p>
-{% endif %}
 
 {% endblock %}
 
-# GPT-ANCHOR:end:tmpl_progress
+<!-- # GPT-ANCHOR:end:tmpl_progress -->

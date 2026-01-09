@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 # --- Debug 'Master' Switch ---
-INTERACTIVE_DEBUG = False
+INTERACTIVE_DEBUG = True
 
 # --- Paths ---
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))

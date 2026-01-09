@@ -1,20 +1,36 @@
-# scrapers/site_adapter.py
+````````````# scrapers/site_adapter.py
 # SEEK adapter with pagination, robust extraction, DB-driven preliminary scoring,
 # and detailed diagnostics routed to a log file (limited console output).
 from __future__ import annotations
 
-import os
-import json
-import sqlite3
-import sys
-import re
-import time
+import os, sqlite3, logging
+import json, sys, re, time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Optional, Union, Type
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+
+from db_names import T, qident            # central table names + quoting
+from url_builder import build_search_url  # robust URL composer you added earlier
+
+class ConfigLoadError(RuntimeError):
+    pass
+
+logger = logging.getLogger("job_hunter.scrapers.site_adapter")
+# Avoid "No handler found" if the app didn’t configure logging:
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO)
+
+try:
+    # Prefer importing a single source of truth
+    from db_utils import DB_FILE
+except Exception:
+    # Fallback to env or local file
+    DB_FILE = os.environ.get("JOBHUNTER_DB", os.path.abspath("job_hunt.db"))
+
+logger.debug(f"[site_adapter] DB_FILE -> {DB_FILE}")
 
 # Ensure project root on sys.path so we can import config/utilities regardless of CWD
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
@@ -103,79 +119,6 @@ def log_run_banner(start: bool, context: str = "") -> None:
         logger.info(line)
 
 # -----------------------------------------------------------------------------
-# SQL fallback upsert (for resilience across schema versions)
-# -----------------------------------------------------------------------------
-def _get_table_columns(conn: sqlite3.Connection, table: str) -> List[str]:
-    cur = conn.execute(f"PRAGMA table_info({table})")
-    return [row[1] for row in cur.fetchall()]
-
-def _direct_upsert_listing_row(
-    listing_id: str,
-    keyword_id: int,
-    title: str,
-    company: str,
-    location: str,
-    url: str,
-    site_id: Optional[int] = None,
-) -> Tuple[bool, str]:
-    """
-    Fallback upsert using sqlite directly. Auto-detects available columns in Job_Listings.
-    Uses INSERT OR IGNORE (won't overwrite). Returns (inserted, message).
-    """
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        conn.execute("PRAGMA foreign_keys=ON")
-        cols = _get_table_columns(conn, "Job_Listings")
-        colset = set(c.lower() for c in cols)
-
-        if "listing_id" not in colset or "keyword_id" not in colset:
-            return False, f"Job_Listings missing required columns: have {cols}"
-
-        insert_cols: List[str] = ["listing_id", "keyword_id", "title", "company", "location", "url"]
-        values: List[Any] = [listing_id, keyword_id, title, company, location, url]
-
-        if "site_id" in colset:
-            insert_cols.append("site_id")
-            values.append(site_id if site_id is not None else 1)
-        if "status" in colset:
-            insert_cols.append("status")
-            values.append("new")
-
-        has_captured_at = ("captured_at" in colset)
-        placeholders = ",".join("?" for _ in insert_cols)
-        col_sql = ",".join(insert_cols) + (",captured_at" if has_captured_at else "")
-        values_sql_suffix = ",CURRENT_TIMESTAMP" if has_captured_at else ""
-        sql = f"INSERT OR IGNORE INTO Job_Listings ({col_sql}) VALUES ({placeholders}{values_sql_suffix})"
-
-        cur = conn.cursor()
-        cur.execute(sql, values)
-        conn.commit()
-        inserted = cur.rowcount > 0
-        if inserted:
-            return True, "inserted"
-
-        where = "listing_id = ?"
-        params = [listing_id]
-        if "site_id" in colset and site_id is not None:
-            where += " AND site_id = ?"
-            params.append(site_id)
-        cur.execute(f"SELECT COUNT(1) FROM Job_Listings WHERE {where}", params)
-        exists = cur.fetchone()[0] > 0
-        if exists:
-            return False, "ignored (duplicate)"
-        return False, "ignored (unknown reason)"
-
-    except sqlite3.IntegrityError as e:
-        return False, f"IntegrityError: {e}"
-    except Exception as e:
-        return False, f"Exception: {e}"
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-# -----------------------------------------------------------------------------
 # Config dataclass and Adapters
 # -----------------------------------------------------------------------------
 @dataclass
@@ -183,15 +126,131 @@ class SiteConfig:
     site_id: int
     site_name: str
     url: str
-    tag_for_result_count: Optional[str] = '[data-automation="totalJobsCountBcues"]'
-    tag_for_cards: Optional[str] = 'article[data-automation="job-card"]'
-    tag_for_title: Optional[str] = 'a[data-automation="jobTitle"]'
-    tag_for_company: Optional[str] = '[data-automation="jobCompany"]'
-    tag_for_location: Optional[str] = '[data-automation="jobLocation"]'
-
+    url_prefix: Optional[str] = None
+    url_suffix: Optional[str] = None
+    tag_for_result_count: Optional[str] = None
+    tag_for_cards: Optional[str] = None
+    tag_for_title: Optional[str] = None
+    tag_for_company: Optional[str] = None
+    tag_for_location: Optional[str] = None
+    tag_for_posted_on: Optional[str] = None
+    site_key: Optional[str] = None  # e.g., "seek", "generic" (optional column)
+    enabled: bool = True
+    
 class SiteAdapter:
     """Base adapter. Subclass per-site if you need custom parsing/rules."""
     site_key: str = "generic"
+
+# inside class SiteAdapter:
+
+    def parse_summary_cards(self, soup):
+        """
+        Return a list of dicts with keys:
+          listing_id, title, company, location, url
+        """
+        import re
+        cards = []
+        seen_ids = set()
+
+        # Prefer structured articles
+        articles = []
+        articles.extend(soup.select('[data-automation="searchResults"] article'))
+        articles.extend(soup.select('article[data-automation]'))
+
+        def _abs_url(href, base):
+            if not href:
+                return None
+            if href.startswith("/") and base:
+                return base.rstrip("/") + href
+            return href
+
+        def _extract(el):
+            a = el.select_one('a[href*="/job/"], a[href*="jobid="]')
+            href = a.get("href") if a else None
+            url = _abs_url(href, getattr(self, "base_url", getattr(getattr(self, "cfg", None), "url", "")))
+            if not url:
+                return None
+
+            m = re.search(r"(\d{5,})", url)
+            if not m:
+                return None
+            listing_id = m.group(1)
+
+            title_el = el.select_one('[data-automation="jobTitle"], h3, h2, a')
+            company_el = el.select_one('[data-automation="jobCompany"], [data-automation="companyName"], .company, .job-company')
+            location_el = el.select_one('[data-automation="jobLocation"], .job-location, .location')
+
+            return {
+                "listing_id": listing_id,
+                "title": title_el.get_text(strip=True) if title_el else "",
+                "company": company_el.get_text(strip=True) if company_el else "",
+                "location": location_el.get_text(strip=True) if location_el else "",
+                "url": url,
+            }
+
+        for el in articles:
+            try:
+                d = _extract(el)
+                if d and d["listing_id"] not in seen_ids:
+                    seen_ids.add(d["listing_id"])
+                    cards.append(d)
+            except Exception:
+                continue
+
+        # Fallback: scan anchors if no structured cards were found
+        if not cards:
+            for a in soup.select('a[href*="/job/"], a[href*="jobid="]'):
+                try:
+                    href = a.get("href")
+                    url = _abs_url(href, getattr(self, "base_url", getattr(getattr(self, "cfg", None), "url", "")))
+                    if not url:
+                        continue
+                    m = re.search(r"(\d{5,})", url)
+                    if not m:
+                        continue
+                    listing_id = m.group(1)
+                    if listing_id in seen_ids:
+                        continue
+                    seen_ids.add(listing_id)
+                    cards.append({
+                        "listing_id": listing_id,
+                        "title": a.get_text(strip=True) or "",
+                        "company": "",
+                        "location": "",
+                        "url": url,
+                    })
+                except Exception:
+                    continue
+
+        return cards
+
+    def parse_total_results(self, soup):
+        """
+        Return the total number of results as an int (best-effort).
+        """
+        import re
+
+        # Common pattern: "1,234 jobs found"
+        txt = soup.get_text(" ", strip=True)
+        m = re.search(r"(\d[\d,\.]+)\s+jobs?\b", txt, flags=re.I)
+        if m:
+            try:
+                return int(m.group(1).replace(",", "").replace(".", ""))
+            except Exception:
+                pass
+
+        # Try dedicated counters
+        el = soup.select_one('[data-automation="totalJobsCount"], .results-count, .search-results__count')
+        if el:
+            m = re.search(r"(\d[\d,\.]*)", el.get_text(" ", strip=True))
+            if m:
+                try:
+                    return int(m.group(1).replace(",", "").replace(".", ""))
+                except Exception:
+                    pass
+
+        # Fallback to "unknown"
+        return 0
 
     def build_search_url(self, cfg: SiteConfig, keyword: str, page: int) -> str:
         from urllib.parse import quote_plus
@@ -291,11 +350,16 @@ class SeekAdapter(SiteAdapter):
     }
 
     def build_search_url(self, cfg: SiteConfig, keyword: str, page: int) -> str:
-        kw = (keyword or '').strip()
-        slug = re.sub(r'[^A-Za-z0-9]+', '-', kw).strip('-')
-        location_slug = getattr(config, 'DEFAULT_LOCATION_SLUG', 'Ringwood-VIC-3134')
-        distance_km = getattr(config, 'DEFAULT_DISTANCE_KM', 10)
-        return f"{cfg.url}/{slug}-jobs/in-{location_slug}?distance={distance_km}&page={page}"
+        # Delegate to the shared, DB-driven builder so base adapter is also correct
+        from url_builder import build_search_url
+        return build_search_url(
+            base_url   = cfg.url,
+            url_prefix = cfg.url_prefix or "/jobs?keywords={keyword}",
+            url_suffix = cfg.url_suffix,
+            params     = {"page": page},
+            keyword    = keyword,
+            location   = None,
+        )
 
     def parse_total_listings(self, driver) -> int:
         """Return the integer total of listings using the live DOM."""
@@ -530,10 +594,10 @@ def _load_card_criteria(site_id: int, user_id: Optional[int] = None) -> List[Dic
         cur = conn.cursor()
 
         q = (
-            'SELECT criteria_id, criteria_field_name, method, use_on_card_view, '
-            '       maximum_score, increase_score, decrease_score, minimum_score, '
-            '       COALESCE(tag, "") AS tag, COALESCE(site_id, -1) AS site_id, COALESCE(user_id, -1) AS user_id '
-            'FROM Criteria'
+            f"SELECT criteria_id, criteria_field_name, method, use_on_card_view, "
+            f"       maximum_score, increase_score, decrease_score, minimum_score, "
+            f"       COALESCE(tag, '') AS tag, COALESCE(site_id, -1) AS site_id, COALESCE(user_id, -1) AS user_id "
+            f"FROM {qident(T.config_criteria)}"
         )
         params: List[Any] = []
         conds: List[str] = []
@@ -556,7 +620,7 @@ def _load_card_criteria(site_id: int, user_id: Optional[int] = None) -> List[Dic
                 continue
             cid = cr['criteria_id']
 
-            cur.execute('SELECT item_id, list_item, impact_on_score FROM "Criteria Lists" WHERE criteria_id = ?', (cid,))
+            cur.execute(f'SELECT item_id, list_item, impact_on_score FROM {qident(T.config_criteria_lists)} WHERE criteria_id = ?', (cid,))
             items = cur.fetchall() or []
             item_objs = [{'value': it['list_item'], 'impact': it['impact_on_score'] } for it in items]
 
@@ -802,22 +866,22 @@ def _update_listing_score(listing_id: str, site_id: int, score: int, queue_deep:
         conn = sqlite3.connect(DB_FILE)
         conn.execute("PRAGMA foreign_keys=ON")
         cur = conn.cursor()
-        cols = [r[1].lower() for r in cur.execute("PRAGMA table_info(Job_Listings)").fetchall()]
+        cols = [r[1].lower() for r in cur.execute("PRAGMA table_info(qident(T.data_job_listings))").fetchall()]
         has_site = 'site_id' in cols
         has_status = 'status' in cols
         if has_site and has_status:
             cur.execute(
-                "UPDATE Job_Listings SET suitability_score=?, status=COALESCE(status, ?) WHERE listing_id=? AND site_id=?",
+                "UPDATE qident(T.data_job_listings) SET suitability_score=?, status=COALESCE(status, ?) WHERE listing_id=? AND site_id=?",
                 (score, ('queued_deep' if queue_deep else 'new'), listing_id, site_id)
             )
         elif has_site:
-            cur.execute("UPDATE Job_Listings SET suitability_score=? WHERE listing_id=? AND site_id=?",
+            cur.execute("UPDATE qident(T.data_job_listings) SET suitability_score=? WHERE listing_id=? AND site_id=?",
                         (score, listing_id, site_id))
         elif has_status:
-            cur.execute("UPDATE Job_Listings SET suitability_score=?, status=COALESCE(status, ?) WHERE listing_id=?",
+            cur.execute("UPDATE qident(T.data_job_listings) SET suitability_score=?, status=COALESCE(status, ?) WHERE listing_id=?",
                         (score, 'queued_deep' if queue_deep else 'new', listing_id))
         else:
-            cur.execute("UPDATE Job_Listings SET suitability_score=? WHERE listing_id=?",
+            cur.execute("UPDATE qident(T.data_job_listings) SET suitability_score=? WHERE listing_id=?",
                         (score, listing_id))
         conn.commit()
     except Exception as e:
@@ -841,11 +905,20 @@ def scrape_site_summary(driver, cfg: SiteConfig, adapter: SiteAdapter,
     and applies global min/max caps after increments/decrements.
     """
     from selenium.webdriver.common.by import By
+    import sqlite3
+    from db_names import T, qident
+    try:
+        from utils.db_utils import DB_FILE  # single source of truth if available
+    except Exception:
+        DB_FILE = os.environ.get("JOBHUNTER_DB", os.path.abspath("job_hunt.db"))
 
     log_run_banner(True, f"{cfg.site_name} | kw[{kw_index}/{total_keywords}] '{keyword}'")
 
+    # Counters
     inserted = 0
-    skipped_existing = 0
+    updated = 0
+    skipped_existing = 0      # in-session duplicates only
+    failed = 0
     scored_not = 0
     scored_mid = 0
     scored_high = 0
@@ -876,7 +949,9 @@ def scrape_site_summary(driver, cfg: SiteConfig, adapter: SiteAdapter,
     # Page 1
     page = 1
     url = adapter.build_search_url(cfg, keyword, page)
-    logger.debug(f"[NAV] {cfg.site_name} -> {url}")
+    logger.info("[NAV] %s \u2192 %s", cfg.site_name, url)
+    print(f"[NAV] {cfg.site_name} \u2192 {url}")
+
     driver.get(url)
     slowmo()
 
@@ -923,8 +998,8 @@ def scrape_site_summary(driver, cfg: SiteConfig, adapter: SiteAdapter,
                 save_artifacts(driver, cfg.site_name, keyword, f"p{page:02d}_blank_retry")
             LAST_SUMMARY.update({
                 'keyword': keyword, 'site': cfg.site_name,
-                'inserted': 0, 'skipped_existing': 0, 'total_reported': 0,
-                'scored': {'not': 0, 'mid': 0, 'high': 0}
+                'inserted': 0, 'updated': 0, 'skipped_existing': 0, 'failed': 0,
+                'total_reported': 0, 'scored': {'not': 0, 'mid': 0, 'high': 0}
             })
             log_run_banner(False, f"{cfg.site_name} | kw[{kw_index}/{total_keywords}] '{keyword}'")
             return 0, 0
@@ -988,16 +1063,24 @@ def scrape_site_summary(driver, cfg: SiteConfig, adapter: SiteAdapter,
     total_pages = (int((total_reported + page_size - 1) / page_size) if total_reported else (1 if cards_found_page1 else 0))
     logger.debug(f"[PAGINATION] total_listings={total_reported}, page_size={page_size}, total_pages={total_pages}")
 
-    # Dedupe preload
+    # --- Dedupe preload from DB (per-site) ---
     try:
-        seen_ids = set(seen_ids_for_site(cfg.site_id))  # type: ignore
+        con = sqlite3.connect(DB_FILE)
+        con.row_factory = sqlite3.Row
+        existing_ids = {r[0] for r in con.execute(
+            f"SELECT listing_id FROM {qident(T.data_job_listings)} WHERE site_id=?",
+            (cfg.site_id,)
+        )}
+        con.close()
     except Exception:
-        seen_ids = set()
-    logger.debug(f"[DB] seen_ids preload for site={cfg.site_id}: count={len(seen_ids)}")
+        existing_ids = set()
+    logger.debug(f"[DB] preload existing listing_ids for site={cfg.site_id}: {len(existing_ids)}")
+
+    seen_ids_session: Set[str] = set()
 
     # Upsert helper
     def _upsert_card(card_el) -> bool:
-        nonlocal inserted, skipped_existing, scored_not, scored_mid, scored_high
+        nonlocal inserted, updated, skipped_existing, failed, scored_not, scored_mid, scored_high, existing_ids
         try:
             if hasattr(card_el, 'get_attribute'):
                 card_html = card_el.get_attribute('outerHTML') or ''
@@ -1015,12 +1098,14 @@ def scrape_site_summary(driver, cfg: SiteConfig, adapter: SiteAdapter,
                 logger.debug(f"[WARN] No listing_id extracted -> SKIP | title={title!r} url={url_!r}")
                 return False
 
-            if listing_id in seen_ids:
+            # In-session duplicate?
+            if listing_id in seen_ids_session:
                 skipped_existing += 1
-                logger.debug(f"[DUP] listing_id={listing_id} already seen -> SKIP")
+                logger.debug(f"[DEDUP] in-session duplicate listing_id={listing_id} -> SKIP")
                 return False
+            seen_ids_session.add(listing_id)
 
-            # --- Compute preliminary score BEFORE upsert (pass listing_id for logging) ---
+            # --- Compute preliminary score BEFORE upsert ---
             prelim_score, excluded, reasons = _apply_card_scoring(
                 {
                     'listing_id': listing_id,
@@ -1034,50 +1119,39 @@ def scrape_site_summary(driver, cfg: SiteConfig, adapter: SiteAdapter,
             )
             queue_deep = (not excluded) and (prelim_score >= provisional_threshold)
 
-            # --- Upsert minimal row ---
-            ok = False
-            errA = errB = None
-            try:
-                ok = bool(upsert_listing_minimal(listing_id, keyword_id, title, company, location, url_, cfg.site_id))  # type: ignore
-            except Exception as e1:
-                errA = e1
-            if not ok:
-                try:
-                    ok = bool(upsert_listing_minimal(cfg.site_id, keyword_id, listing_id, title, company, location, url_))  # type: ignore
-                except Exception as e2:
-                    errB = e2
-
-            if not ok:
-                ok_sql, msg = _direct_upsert_listing_row(listing_id, keyword_id, title, company, location, url_, cfg.site_id)
-                if errA: logger.debug(f"[UPSERT-A] exception: {errA}")
-                if errB: logger.debug(f"[UPSERT-B] exception: {errB}")
-                logger.debug(f"[UPSERT-SQL] {listing_id} -> {msg}")
-                ok = ok_sql
-
-            if ok:
-                seen_ids.add(listing_id)
-                inserted += 1
-
-                # Persist computed score/status (now listing exists)
-                try:
-                    _update_listing_score(listing_id, cfg.site_id, int(prelim_score), bool(queue_deep))
-                except Exception as e3:
-                    logger.debug(f"[ERROR] upsert pipeline exception: {e3}")
-
-                # Tally buckets
-                if prelim_score < 2:
-                    scored_not += 1
-                elif prelim_score == 2:
-                    scored_mid += 1
-                else:
-                    scored_high += 1
-                logger.debug(f"[SCORING] {listing_id} score={prelim_score} excluded={excluded} queued_deep={queue_deep} reasons={reasons}")
-                return True
-            else:
-                logger.debug(f"[FAIL] upsert failed listing_id={listing_id} title={title!r} url={url_!r}")
+            # --- UPSERT (uses revised _direct_upsert_listing_row which logs SQL on error) ---
+            ok_sql, msg = _direct_upsert_listing_row(listing_id, keyword_id, title, company, location, url_, cfg.site_id)
+            if not ok_sql:
+                failed += 1
+                logger.debug(f"[FAIL] upsert failed listing_id={listing_id} title={title!r} url={url_!r} -> {msg}")
                 return False
 
+            # Tally inserted vs updated
+            if isinstance(msg, str) and msg.lower().startswith("updated"):
+                updated += 1
+            else:
+                inserted += 1
+                existing_ids.add(listing_id)  # keep DB-preload in sync within this run
+
+            # Persist computed score/status (now listing exists)
+            try:
+                _update_listing_score(listing_id, cfg.site_id, int(prelim_score), bool(queue_deep))
+            except Exception as e3:
+                logger.debug(f"[ERROR] score persist exception: {e3}")
+
+            # Buckets
+            if prelim_score < 2:
+                scored_not += 1
+            elif prelim_score == 2:
+                scored_mid += 1
+            else:
+                scored_high += 1
+
+            logger.debug(f"[SCORING-OUT] listing_id={listing_id!r} score={prelim_score} excluded={excluded} reasons={reasons}")
+            return True
+
         except Exception as e:
+            failed += 1
             logger.debug(f"[ERROR] upsert pipeline exception: {e}")
             return False
 
@@ -1105,7 +1179,8 @@ def scrape_site_summary(driver, cfg: SiteConfig, adapter: SiteAdapter,
     if total_pages > 1:
         for p in range(2, total_pages + 1):
             urlp = adapter.build_search_url(cfg, keyword, p)
-            logger.debug(f"[NAV] {cfg.site_name} -> {urlp}")
+            logger.info("[NAV] %s \u2192 %s", cfg.site_name, urlp)
+            print(f"[NAV] {cfg.site_name} \u2192 {urlp}")
             driver.get(urlp)
             slowmo()
             t0 = time.time()
@@ -1142,76 +1217,193 @@ def scrape_site_summary(driver, cfg: SiteConfig, adapter: SiteAdapter,
         'keyword': keyword,
         'site': cfg.site_name,
         'inserted': inserted,
-        'skipped_existing': skipped_existing,
+        'updated': updated,
+        'skipped_existing': skipped_existing,  # in-session dups
+        'failed': failed,
         'total_reported': total_reported,
         'scored': {'not': scored_not, 'mid': scored_mid, 'high': scored_high}
     })
     logger.debug(
-        f"[SUMMARY] keyword='{keyword}' inserted={inserted} skipped_existing={skipped_existing} total_reported={total_reported} "
-        f"scored=(not:{scored_not}, mid:{scored_mid}, high:{scored_high})"
+        "[SUMMARY] keyword=%r inserted=%d updated=%d skipped_session_dup=%d failed=%d "
+        "total_reported=%d scored=(not:%d, mid:%d, high:%d)",
+        keyword, inserted, updated, skipped_existing, failed,
+        total_reported, scored_not, scored_mid, scored_high
     )
 
     log_run_banner(False, f"{cfg.site_name} | kw[{kw_index}/{total_keywords}] '{keyword}'")
     return inserted, total_reported
 
 # -----------------------------------------------------------------------------
-# Site registry helpers
+# Site registry helpers (explicit fallback for local testing ONLY)
 # -----------------------------------------------------------------------------
 def get_default_seek_config() -> SiteConfig:
+    """
+    EXPLICIT DEV FALLBACK ONLY.
+    Do not call this in production code; it masks DB problems.
+    """
     return SiteConfig(
         site_id=1,
-        site_name="Seek",
+        site_name="Seek (DEFAULT-FALLBACK)",
         url="https://www.seek.com.au",
-        tag_for_result_count='[data-automation="totalJobsCountBcues"]',
+        url_prefix="/jobs?keywords={keyword}",   # default pattern
+        url_suffix=None,                         # DB should override, e.g. 'sortmode=ListedDate'
+        tag_for_result_count='[data-automation="totalJobsMessage"]',
         tag_for_cards='article[data-automation="job-card"]',
         tag_for_title='a[data-automation="jobTitle"]',
         tag_for_company='[data-automation="jobCompany"]',
         tag_for_location='[data-automation="jobLocation"]',
     )
 
-def _cfg_from_row(site_id: int, site_name: str, base_url: str, extra_json: Optional[str]) -> SiteConfig:
-    cfg = SiteConfig(site_id=site_id, site_name=site_name, url=base_url)
-    if extra_json:
-        try:
-            data = json.loads(extra_json)
-            cfg.tag_for_result_count = data.get("tag_for_result_count", cfg.tag_for_result_count)
-            cfg.tag_for_cards = data.get("tag_for_cards", cfg.tag_for_cards)
-            cfg.tag_for_title = data.get("tag_for_title", cfg.tag_for_title)
-            cfg.tag_for_company = data.get("tag_for_company", cfg.tag_for_company)
-            cfg.tag_for_location = data.get("tag_for_location", cfg.tag_for_location)
-        except Exception:
-            pass
-    return cfg
+    def _cfg_from_row(row) -> SiteConfig:
+        cfg = SiteConfig(
+            site_id=row["site_id"],
+            site_name=row["site_name"],
+            url=row["url"],
+            url_prefix=row["url_prefix"],
+            url_suffix=row["url_suffix"],
+            tag_for_result_count=row["tag_for_result_count"],
+            tag_for_cards=row["tag_for_cards"],
+            tag_for_title=row["tag_for_title"],
+            tag_for_company=row["tag_for_company"],
+            tag_for_location=row["tag_for_location"],
+            tag_for_posted_on=row["tag_for_posted_on"],
+            site_key=row.get("site_key") if "site_key" in row.keys() else None,
+            enabled=bool(row.get("enabled", 1)) if "enabled" in row.keys() else True,
+        )
+        return cfg
+    
+def load_sites(only_enabled: bool = True, allow_fallback: bool = False):
+    """
+    Load sites from config_sites.
 
-def load_sites(only_enabled: bool = True) -> Dict[int, SiteConfig]:
+    Strict by default:
+      - raises ConfigLoadError on missing table/columns, 0 rows, or SQL issues
+      - DOES NOT silently fallback to defaults
+
+    Pass allow_fallback=True ONLY in local dev tools to get a single Seek config.
     """
-    Load Sites from DB (table 'Sites'). If missing/empty, return a default Seek config as site_id=1.
-    """
-    sites: Dict[int, SiteConfig] = {}
+    con = sqlite3.connect(DB_FILE)
+    con.row_factory = sqlite3.Row
     try:
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        query = "SELECT site_id, site_name, base_url, enabled, extra_json FROM Sites"
-        if only_enabled:
-            query += " WHERE enabled = 1"
-        c.execute(query)
-        rows = c.fetchall()
-        conn.close()
+        cur = con.cursor()
 
+        # Ensure table exists
+        if not cur.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (T.config_sites,)
+        ).fetchone():
+            msg = f"Table {T.config_sites} not found in DB: {DB_FILE}"
+            if allow_fallback:
+                logger.warning("[load_sites] %s; returning DEFAULT fallback", msg)
+                return {1: get_default_seek_config()}
+            raise ConfigLoadError(msg)
+
+        # Column introspection
+        cols = {r[1] for r in cur.execute(f"PRAGMA table_info({qident(T.config_sites)})")}
+        required = {"site_id", "site_name", "url"}
+        missing = required - cols
+        if missing:
+            msg = f"{T.config_sites} missing columns: {sorted(missing)} (db={DB_FILE})"
+            if allow_fallback:
+                logger.warning("[load_sites] %s; returning DEFAULT fallback", msg)
+                return {1: get_default_seek_config()}
+            raise ConfigLoadError(msg)
+
+        select_cols = [
+            "site_id","site_name","url","url_prefix","url_suffix",
+            "tag_for_result_count","tag_for_cards","tag_for_title",
+            "tag_for_company","tag_for_location","tag_for_posted_on"
+        ]
+        if "enabled" in cols:  select_cols.append("enabled")
+        if "site_key" in cols: select_cols.append("site_key")
+
+        sql = f"SELECT {', '.join(select_cols)} FROM {qident(T.config_sites)}"
+        if only_enabled and "enabled" in cols:
+            sql += " WHERE enabled=1"
+        sql += " ORDER BY site_id"
+
+        rows = cur.execute(sql).fetchall()
         if not rows:
-            cfg = get_default_seek_config()
+            msg = f"No rows present in {T.config_sites} (db={DB_FILE})"
+            if allow_fallback:
+                logger.warning("[load_sites] %s; returning DEFAULT fallback", msg)
+                return {1: get_default_seek_config()}
+            raise ConfigLoadError(msg)
+
+        sites = {}
+        for r in rows:
+            cfg = SiteConfig(
+                site_id=r["site_id"],
+                site_name=r["site_name"],
+                url=r["url"],
+                url_prefix=r["url_prefix"],
+                url_suffix=r["url_suffix"],  # <-- flows from DB
+                tag_for_result_count=r["tag_for_result_count"],
+                tag_for_cards=r["tag_for_cards"],
+                tag_for_title=r["tag_for_title"],
+                tag_for_company=r["tag_for_company"],
+                tag_for_location=r["tag_for_location"],
+                tag_for_posted_on=r["tag_for_posted_on"],
+                site_key=(r["site_key"] if "site_key" in r.keys() else None),
+                enabled=(bool(r["enabled"]) if "enabled" in r.keys() else True),
+            )
             sites[cfg.site_id] = cfg
-            return sites
 
-        for site_id, site_name, base_url, enabled, extra_json in rows:
-            cfg = _cfg_from_row(site_id, site_name, base_url, extra_json)
-            sites[site_id] = cfg
+        logger.info("[load_sites] loaded %d site(s) from %s", len(sites), DB_FILE)
+        return sites
 
-        return sites
-    except Exception:
-        cfg = get_default_seek_config()
-        sites[cfg.site_id] = cfg
-        return sites
+    except sqlite3.Error as e:
+        msg = f"SQL error loading {T.config_sites} from {DB_FILE}: {e}"
+        if allow_fallback:
+            logger.warning("[load_sites] %s; returning DEFAULT fallback", msg)
+            return {1: get_default_seek_config()}
+        raise ConfigLoadError(msg)
+    finally:
+        con.close()
+
+def get_site_config_or_die(site_id: int) -> SiteConfig:
+    """Fetch a single site row or raise ConfigLoadError with a precise reason."""
+    con = sqlite3.connect(DB_FILE)
+    con.row_factory = sqlite3.Row
+    try:
+        cur = con.cursor()
+        row = cur.execute(
+            f"""SELECT site_id, site_name, url, url_prefix, url_suffix,
+                        tag_for_result_count, tag_for_cards, tag_for_title,
+                        tag_for_company, tag_for_location, tag_for_posted_on,
+                        COALESCE(enabled, 1) AS enabled,
+                        COALESCE(site_key, NULL) AS site_key
+                 FROM {qident(T.config_sites)}
+                WHERE site_id=?""",
+            (site_id,),
+        ).fetchone()
+        if not row:
+            raise ConfigLoadError(f"Site ID {site_id} not found in {T.config_sites} (db={DB_FILE})")
+        return SiteConfig(
+            site_id=row["site_id"],
+            site_name=row["site_name"],
+            url=row["url"],
+            url_prefix=row["url_prefix"],
+            url_suffix=row["url_suffix"],
+            tag_for_result_count=row["tag_for_result_count"],
+            tag_for_cards=row["tag_for_cards"],
+            tag_for_title=row["tag_for_title"],
+            tag_for_company=row["tag_for_company"],
+            tag_for_location=row["tag_for_location"],
+            tag_for_posted_on=row["tag_for_posted_on"],
+            site_key=row["site_key"],
+            enabled=bool(row["enabled"]),
+        )
+    finally:
+        con.close()
+
+def debug_print_config_sites():
+    con = sqlite3.connect(DB_FILE); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        f"SELECT site_id, site_name, url, url_prefix, url_suffix FROM {qident(T.config_sites)} ORDER BY site_id"
+    ).fetchall()
+    print("config_sites rows:", [dict(r) for r in rows])
+    con.close()
+
 
 # -----------------------------------------------------------------------------
 # Adapter factory and keyword shim
@@ -1254,8 +1446,8 @@ def active_keywords_for_user(user_id: Optional[int] = None,
         c = conn.cursor()
         query = (
             "SELECT k.keyword_id, k.keyword "
-            "FROM Keywords k "
-            "JOIN Roles r ON r.role_id = k.role_id "
+            "FROM qident(T.data_keywords) k "
+            "JOIN qident(T.data_roles) r ON r.role_id = k.role_id "
         )
         cond = []
         if only_enabled_keywords:
