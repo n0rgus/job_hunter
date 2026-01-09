@@ -1,0 +1,78 @@
+authors: ["Norgus"]
+project: job_hunter
+languages: [python]
+runtime:
+  python: "3.11"
+non_negotiables:
+  - code_style: black + isort
+  - typing: optional
+  - logging: INFO jsonlike
+  - tests: pytest minimal
+repo: "https://github.com/n0rgus/job_hunter"
+requirements_url: "https://github.com/n0rgus/job_hunter/blob/dev/REQUIREMENTS.md"
+entrypoints:
+  - run: python main_scraper.py
+  - run: python dashboard/dashboard.py
+  - test: pytest -q
+io:
+  db_path: "D:\\Data\\Code\\Repos\\job_hunter\\job_hunt.db"
+  url: "http://127.0.0.1:5000"
+state:
+  branch: dev
+status:
+  met: 53
+  in_progress: 7
+  last_update: "2025-08-27"
+risks:
+  - id: "R-001"
+    title: "Adapters missing deep_enrich cause crash"
+    mitigation: "Add no-op deep_enrich() default in base adapter; guard getattr(...) in caller"
+    references: ["SeekAdapter AttributeError from logs 2025-08-24"]
+  - id: "R-002"
+    title: "CAPTCHA/anti-bot blocks scraping"
+    mitigation: "Detect common 'are you human' markers; pause & prompt; retry/backoff"
+  - id: "R-003"
+    title: "Duplicate/incorrect DB paths"
+    mitigation: "Use absolute db_path from config in dashboard & scripts"
+next:
+  - id: "REQ-046"
+    desc: "Add basic CAPTCHA/anti-bot detection & pause flow in scrapers/main"
+    acceptance: "Scrape run halts and logs 'CAPTCHA detected' with manual resume supported"
+    priority: 1
+  - id: "bug-deep-enrich"
+    desc: "Harden call sites with getattr(adapter,'deep_enrich', lambda *a,**k:{}) and implement base no-op"
+    acceptance: "No AttributeError when SeekAdapter has no deep_enrich"
+    priority: 1
+  - id: "REQ-053"
+    desc: "Use absolute db_path in dashboard (avoid creating subfolder dbs)"
+    acceptance: "Dashboard connects to same DB as scraper"
+    priority: 2
+  - id: "REQ-052"
+    desc: "Normalize Windows path usage for JSON patching & automation logs"
+    acceptance: "Backslashes retained in emitted paths"
+    priority: 3
+patch_format:
+  preferred: "JSON patch (file + edits) with replace|insert_before|insert_after|replace_function"
+  alt: "Unified Git diff per full files when large structural changes"
+notes:
+  - "This file updated via ChatGPT handover with traceability summary (53 met / 7 in progress)."
+project: job_hunter
+languages: [python]
+runtime:
+  python: "3.11"
+non_negotiables:
+  - code_style: black + isort
+  - typing: optional
+  - logging: INFO jsonlike
+  - tests: pytest minimal
+entrypoints:
+  - run: python main_scraper.py
+  - run: python /dashboard/dashboard.py
+  - test: pytest -q
+io:
+  data_dir: "D:/Data/Code/Repos/job_hunter-dev/job-hunt.DB"
+  url: "http:\\127.0.0.1:5000"
+state:
+  branch: dev
+next:
+ - Respond to user testing assessment of met requirements (see attached).

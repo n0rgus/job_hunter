@@ -1,12 +1,67 @@
-*.cpython-311.pyc
-*.log
-/_input
-job_hunt.db
+# --- Python bytecode / caches ---
 __pycache__/
-/_automation
-/_docs
-/debug_pages
-dashboard/routes/__pycache__/main.cpython-311.pyc
-dashboard/routes/__pycache__/main.cpython-311.pyc
-dashboard/utils/__pycache__/db_helpers.cpython-311.pyc
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.cpython-*.pyc
+
+# --- Logs ---
+*.log
+
+# --- Local runtime / scratch ---
+runtime/
+.runtime/
+debug_pages/
+scrape_progress.json
+
+# --- Local DB (do not version) ---
 job_hunt.db
+*.sqlite
+*.sqlite3
+*.db
+
+# --- Project folders you explicitly don't want tracked ---
+/_input/
+/_automation/
+/_docs/
+
+# --- Optional: common Python tooling ---
+.venv/
+venv/
+.env
+.env.*
+.pytest_cache/
+.mypy_cache/
+ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# --- Local runtime / debug artefacts (keep out of git) ---
+__pycache__/
+**/__pycache__/
+*.pyc
+*.cpython-*.pyc
+job_hunt.db
+*.db
+scrape_progress.json
+_archive/
+_wip/
+scrapers/debug_pages/
+
+# --- Python bytecode / caches ---
+__pycache__/
+**/__pycache__/
+*.pyc
+*.cpython-*.pyc
+
+# --- Local DB / state ---
+job_hunt.db
+scrape_progress.json
+
+# --- Dev history & debug captures (archive, don't version) ---
+_archive/
+_wip/
+scrapers/debug_pages/
+
