@@ -37,3 +37,15 @@ ruff_cache/
 dist/
 build/
 *.egg-info/
+
+# --- Local runtime / debug artefacts (keep out of git) ---
+__pycache__/
+**/__pycache__/
+*.pyc
+*.cpython-*.pyc
+job_hunt.db
+*.db
+scrape_progress.json
+_archive/
+_wip/
+scrapers/debug_pages/
