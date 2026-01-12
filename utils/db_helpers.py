@@ -120,20 +120,56 @@ def get_keywords():
     conn.close()
     return [r[0] for r in rows]
 
-def get_listings(keyword=None, suitability=None, role_id=None, scanned_since=None):
+def get_color_tags(keyword=None, role_id=None, scanned_since=None):
+    """Return distinct non-empty color tags for filters."""
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+
+    query = (
+        f"SELECT DISTINCT jl.color_tag "
+        f"FROM {qident(T.data_job_listings)} jl "
+        f"JOIN {qident(T.data_keywords)} k ON jl.keyword_id = k.keyword_id "
+        "WHERE jl.color_tag IS NOT NULL AND jl.color_tag != ''"
+    )
+    params = []
+
+    if keyword:
+        query += " AND k.keyword = ?"
+        params.append(keyword)
+
+    if role_id:
+        query += " AND k.role_id = ?"
+        params.append(role_id)
+
+    if scanned_since:
+        query += " AND datetime(jl.captured_at) >= datetime(?)"
+        if len(scanned_since) == 10:
+            scanned_since = scanned_since + " 00:00:00"
+        params.append(scanned_since)
+
+    query += " ORDER BY jl.color_tag"
+
+    c.execute(query, params)
+    rows = c.fetchall()
+    conn.close()
+    return [r[0] for r in rows]
+
+def get_listings(keyword=None, suitability=None, role_id=None, scanned_since=None, color_tag=None):
     """
     Fetch listings with optional filters:
       - keyword: exact keyword text match (on data_keywords.keyword)
       - suitability: 'not' (<=2), 'mid' (=3), 'high' (>3)
       - role_id: restrict to a role’s keywords
       - scanned_since: ISO date (YYYY-MM-DD) or full timestamp; filters by captured_at
+      - color_tag: exact color tag match
     """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
     query = (
         f"SELECT jl.listing_id, jl.title, jl.company, jl.location, jl.url, "
-        f"       jl.suitability_score, jl.status, jl.captured_at, k.keyword, k.role_id "
+        f"       jl.suitability_score, jl.status, jl.captured_at, k.keyword, k.role_id, "
+        f"       jl.color_tag, jl.color_hex "
         f"FROM {qident(T.data_job_listings)} jl "
         f"JOIN {qident(T.data_keywords)} k ON jl.keyword_id = k.keyword_id"
     )
@@ -155,6 +191,10 @@ def get_listings(keyword=None, suitability=None, role_id=None, scanned_since=Non
     elif suitability == "high":
         conditions.append("jl.suitability_score > 3")
 
+    if color_tag:
+        conditions.append("jl.color_tag = ?")
+        params.append(color_tag)
+
     if scanned_since:
         conditions.append("datetime(jl.captured_at) >= datetime(?)")
         if len(scanned_since) == 10:
@@ -171,7 +211,7 @@ def get_listings(keyword=None, suitability=None, role_id=None, scanned_since=Non
     conn.close()
 
     listings = []
-    for lid, title, company, location, url, score, status, captured_at, kw, r_id in rows:
+    for lid, title, company, location, url, score, status, captured_at, kw, r_id, color_tag, color_hex in rows:
         listings.append({
             "listing_id": lid,
             "title": title,
@@ -183,6 +223,8 @@ def get_listings(keyword=None, suitability=None, role_id=None, scanned_since=Non
             "captured_at": captured_at,
             "keyword": kw,
             "role_id": r_id,
+            "color_tag": color_tag,
+            "color_hex": color_hex,
         })
     return listings
 
