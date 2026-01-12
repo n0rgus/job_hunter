@@ -1,4 +1,4 @@
-````````````# scrapers/site_adapter.py
+# scrapers/site_adapter.py
 # SEEK adapter with pagination, robust extraction, DB-driven preliminary scoring,
 # and detailed diagnostics routed to a log file (limited console output).
 from __future__ import annotations
