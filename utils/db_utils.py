@@ -1,6 +1,7 @@
 # db_utils.py
+import logging
 import sqlite3
-from typing import Iterable, Optional, Dict, Any, Tuple
+from typing import Iterable, Optional, Dict, Any, Tuple, List
 from db_names import T, qident
 
 DB_FILE = "job_hunt.db"  # ensure this points to the same DB as db_helpers
@@ -70,7 +71,7 @@ def direct_upsert_listing_row(
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
 
-        cols = _get_table_columns(conn, table)
+        cols = get_table_columns(conn, table)
         colset = {c.lower() for c in cols}
         required = {"listing_id", "keyword_id"}
         if not required.issubset(colset):
@@ -107,7 +108,7 @@ def direct_upsert_listing_row(
         ).fetchone())
 
         # ON CONFLICT target
-        conflict_cols = _detect_conflict_target(conn, table)
+        conflict_cols = detect_conflict_target(conn, table)
 
         # SET clause for DO UPDATE (exclude conflict columns)
         set_cols = [c for c in columns if c not in conflict_cols]
@@ -127,7 +128,7 @@ def direct_upsert_listing_row(
             cur.execute(sql, values)
             conn.commit()
         except sqlite3.Error as e:
-            rendered = _format_sql_with_params(sql, values)
+            rendered = format_sql_with_params(sql, values)
             log.error("[UPSERT-FAILED] %s", e)
             log.error("[UPSERT-SQL] %s", rendered)
             return False, f"Exception: {e}"
